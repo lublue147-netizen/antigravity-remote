@@ -1,0 +1,27 @@
+<resources>
+    <string name="app_name">Antigravity Remote</string>
+    <string name="connect">Connect</string>
+    <string name="disconnect">Disconnect</string>
+    <string name="server_url">Server URL</string>
+    <string name="auth_token">Authentication Token</string>
+    <string name="sessions">Sessions</string>
+    <string name="settings">Settings</string>
+    <string name="chat">Chat</string>
+    <string name="send_message">Send message</string>
+    <string name="no_sessions">No active sessions</string>
+    <string name="connecting">Connecting...</string>
+    <string name="connected">Connected</string>
+    <string name="disconnected">Disconnected</string>
+    <string name="error">Error</string>
+    <string name="approve">Approve</string>
+    <string name="reject">Reject</string>
+    <string name="new_session">New Session</string>
+    <string name="stop_session">Stop Session</string>
+    <string name="agent_needs_input">Agent needs your input</string>
+    <string name="notification_channel_name">Agent Notifications</string>
+    <string name="notification_channel_desc">Notifications when agents need input</string>
+    <string name="dark_theme">Dark Theme</string>
+    <string name="notifications_enabled">Notifications Enabled</string>
+    <string name="save">Save</string>
+    <string name="cancel">Cancel</string>
+</resources>
