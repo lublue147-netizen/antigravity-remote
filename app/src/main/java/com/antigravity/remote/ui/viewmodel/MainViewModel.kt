@@ -23,6 +23,9 @@ class MainViewModel @Inject constructor(
     val serverUrl = settingsDataStore.serverUrl.stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5000), ""
     )
+    val webRemoteUrl = settingsDataStore.webRemoteUrl.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5000), "https://antigravity.google.com"
+    )
     val authToken = settingsDataStore.authToken.stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5000), ""
     )
@@ -78,7 +81,16 @@ class MainViewModel @Inject constructor(
     }
 
     fun updateServerUrl(url: String) {
-        viewModelScope.launch { settingsDataStore.setServerUrl(url) }
+        viewModelScope.launch {
+            settingsDataStore.setServerUrl(url)
+            if (url.contains("antigravity.google.com")) {
+                settingsDataStore.setWebRemoteUrl(url)
+            }
+        }
+    }
+
+    fun updateWebRemoteUrl(url: String) {
+        viewModelScope.launch { settingsDataStore.setWebRemoteUrl(url) }
     }
 
     fun updateAuthToken(token: String) {

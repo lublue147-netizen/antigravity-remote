@@ -18,9 +18,10 @@ import com.antigravity.remote.ui.screen.SettingsScreen
 import com.antigravity.remote.ui.viewmodel.MainViewModel
 
 sealed class Screen(val route: String, val title: String) {
-    data object Dashboard : Screen("dashboard", "Sessions")
-    data object Chat : Screen("chat", "Chat")
-    data object Settings : Screen("settings", "Settings")
+    data object WebRemote : Screen("web_remote", "网页版")
+    data object Dashboard : Screen("dashboard", "会话列表")
+    data object Chat : Screen("chat", "交互")
+    data object Settings : Screen("settings", "设置")
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -30,7 +31,7 @@ fun AppNavigation(viewModel: MainViewModel) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
-    val items = listOf(Screen.Dashboard, Screen.Chat, Screen.Settings)
+    val items = listOf(Screen.WebRemote, Screen.Dashboard, Screen.Chat, Screen.Settings)
 
     Scaffold(
         bottomBar = {
@@ -39,6 +40,7 @@ fun AppNavigation(viewModel: MainViewModel) {
                     NavigationBarItem(
                         icon = {
                             when (screen) {
+                                Screen.WebRemote -> Icon(Icons.Filled.Public, contentDescription = screen.title)
                                 Screen.Dashboard -> Icon(Icons.Filled.Dashboard, contentDescription = screen.title)
                                 Screen.Chat -> Icon(Icons.Filled.Chat, contentDescription = screen.title)
                                 Screen.Settings -> Icon(Icons.Filled.Settings, contentDescription = screen.title)
@@ -64,9 +66,12 @@ fun AppNavigation(viewModel: MainViewModel) {
     ) { innerPadding ->
         NavHost(
             navController = navController,
-            startDestination = Screen.Dashboard.route,
+            startDestination = Screen.WebRemote.route,
             modifier = Modifier.padding(innerPadding)
         ) {
+            composable(Screen.WebRemote.route) {
+                com.antigravity.remote.ui.screen.WebRemoteScreen(viewModel = viewModel)
+            }
             composable(Screen.Dashboard.route) {
                 DashboardScreen(
                     viewModel = viewModel,
@@ -80,7 +85,12 @@ fun AppNavigation(viewModel: MainViewModel) {
                 ChatScreen(viewModel = viewModel)
             }
             composable(Screen.Settings.route) {
-                SettingsScreen(viewModel = viewModel)
+                SettingsScreen(
+                    viewModel = viewModel,
+                    onNavigateToWeb = {
+                        navController.navigate(Screen.WebRemote.route)
+                    }
+                )
             }
         }
     }

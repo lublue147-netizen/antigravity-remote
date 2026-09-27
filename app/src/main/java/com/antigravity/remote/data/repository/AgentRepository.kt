@@ -37,6 +37,10 @@ class AgentRepository @Inject constructor(
     }
 
     fun connect(serverUrl: String, authToken: String) {
+        if (serverUrl.contains("antigravity.google.com")) {
+            webSocketService.setError("antigravity.google.com 为官方网页版。请在底部选择【网页版】直接访问，或在设置中输入自建 WebSocket 服务地址。")
+            return
+        }
         val wsUrl = buildWsUrl(serverUrl)
         webSocketService.connect(wsUrl, authToken)
     }

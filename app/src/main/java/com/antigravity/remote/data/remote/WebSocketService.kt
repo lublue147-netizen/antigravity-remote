@@ -62,4 +62,8 @@ class WebSocketService @Inject constructor() {
         webSocket = null
         _connectionState.value = ConnectionState.Disconnected
     }
+
+    fun setError(message: String) {
+        _connectionState.value = ConnectionState.Error(message)
+    }
 }
