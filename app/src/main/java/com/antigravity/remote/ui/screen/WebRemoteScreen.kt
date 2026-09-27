@@ -90,7 +90,7 @@ fun WebRemoteScreen(viewModel: MainViewModel) {
                         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(target)))
                     }
                 }) {
-                    Icon(Icons.Filled.OpenInBrowser, contentDescription = "Open in Browser")
+                    Icon(Icons.Filled.Share, contentDescription = "Open in Browser")
                 }
             }
         )
@@ -113,7 +113,7 @@ fun WebRemoteScreen(viewModel: MainViewModel) {
                     modifier = Modifier.padding(24.dp)
                 ) {
                     Icon(
-                        Icons.Filled.Public,
+                        Icons.Filled.Home,
                         contentDescription = null,
                         modifier = Modifier.size(64.dp),
                         tint = MaterialTheme.colorScheme.primary
@@ -133,7 +133,7 @@ fun WebRemoteScreen(viewModel: MainViewModel) {
                     )
                     Spacer(Modifier.height(16.dp))
                     Button(onClick = { showUrlDialog = true }) {
-                        Icon(Icons.Filled.AddLink, contentDescription = null)
+                        Icon(Icons.Filled.Add, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
                         Text("输入链接")
                     }

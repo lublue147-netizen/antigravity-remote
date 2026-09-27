@@ -50,7 +50,7 @@ fun SettingsScreen(
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Public, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Icon(Icons.Filled.Home, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.width(8.dp))
                     Text(
                         "官方网页版远程控制 (推荐)",
@@ -85,7 +85,7 @@ fun SettingsScreen(
                         },
                         modifier = Modifier.weight(1f)
                     ) {
-                        Icon(Icons.Filled.Launch, contentDescription = null)
+                        Icon(Icons.Filled.PlayArrow, contentDescription = null)
                         Spacer(Modifier.width(4.dp))
                         Text("保存并打开网页版")
                     }
@@ -115,7 +115,7 @@ fun SettingsScreen(
             onValueChange = { editServerUrl = it },
             label = { Text("WebSocket Server 地址") },
             placeholder = { Text("如 192.168.1.100:3000") },
-            leadingIcon = { Icon(Icons.Filled.Dns, contentDescription = null) },
+            leadingIcon = { Icon(Icons.Filled.Info, contentDescription = null) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
         )
@@ -126,11 +126,11 @@ fun SettingsScreen(
             onValueChange = { editAuthToken = it },
             label = { Text("Auth Token (可选)") },
             placeholder = { Text("服务认证密钥") },
-            leadingIcon = { Icon(Icons.Filled.Key, contentDescription = null) },
+            leadingIcon = { Icon(Icons.Filled.Lock, contentDescription = null) },
             trailingIcon = {
                 IconButton(onClick = { showToken = !showToken }) {
                     Icon(
-                        if (showToken) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                        Icons.Filled.Lock,
                         contentDescription = "切换可见性"
                     )
                 }
