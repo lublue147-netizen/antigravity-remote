@@ -74,8 +74,8 @@ com.antigravity.remote/
 
 ```bash
 # Clone the repository
-git clone https://github.com/lublue147-netizen/contra-go.git
-cd contra-go
+git clone https://github.com/lublue147-netizen/antigravity-remote.git
+cd antigravity-remote
 
 # Build debug APK
 ./gradlew assembleDebug
