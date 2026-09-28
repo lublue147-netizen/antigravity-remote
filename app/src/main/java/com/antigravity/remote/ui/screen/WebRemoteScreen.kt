@@ -53,6 +53,14 @@ fun WebRemoteScreen(
     var showUrlDialog by remember { mutableStateOf(false) }
     var showFabMenu by remember { mutableStateOf(false) }
 
+    val isImeVisible = WindowInsets.ime.asPaddingValues().calculateBottomPadding() > 0.dp
+
+    LaunchedEffect(isImeVisible) {
+        if (isImeVisible) {
+            showFabMenu = false
+        }
+    }
+
     // Intercept hardware/gesture back to navigate inside webview history
     BackHandler(enabled = canGoBack) {
         webViewInstance?.goBack()
@@ -121,6 +129,8 @@ fun WebRemoteScreen(
 
                         setBackgroundColor(0xFF121212.toInt())
                         setLayerType(View.LAYER_TYPE_HARDWARE, null)
+                        isFocusable = true
+                        isFocusableInTouchMode = true
 
                         // Cookie persistence for Google authentication
                         CookieManager.getInstance().setAcceptCookie(true)
@@ -160,7 +170,7 @@ fun WebRemoteScreen(
                                 isLoading = false
                                 canGoBack = view?.canGoBack() ?: false
 
-                                // Inject CSS and viewport fixes to eliminate top/bottom black borders
+                                // Inject CSS and viewport fixes to eliminate top/bottom black borders & auto scroll to input
                                 if (fitScreen) {
                                     val jsInject = """
                                         (function() {
@@ -180,7 +190,6 @@ fun WebRemoteScreen(
                                                     html, body {
                                                         width: 100% !important;
                                                         min-height: 100% !important;
-                                                        height: 100% !important;
                                                         margin: 0 !important;
                                                         padding: 0 !important;
                                                         background-color: #121212 !important;
@@ -195,10 +204,42 @@ fun WebRemoteScreen(
                                                 `;
                                                 document.head.appendChild(style);
                                             }
+
+                                            // Automatically scroll focused input/textarea into view when virtual keyboard appears
+                                            function ensureInputVisible() {
+                                                var active = document.activeElement;
+                                                if (active && (
+                                                    active.tagName === 'INPUT' || 
+                                                    active.tagName === 'TEXTAREA' || 
+                                                    active.isContentEditable || 
+                                                    active.getAttribute('role') === 'textbox' ||
+                                                    (active.className && typeof active.className === 'string' && active.className.indexOf('monaco') !== -1)
+                                                )) {
+                                                    setTimeout(function() {
+                                                        active.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                                    }, 150);
+                                                    setTimeout(function() {
+                                                        active.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                                    }, 350);
+                                                }
+                                            }
+
+                                            window.addEventListener('focusin', ensureInputVisible, true);
+
+                                            if (window.visualViewport) {
+                                                window.visualViewport.addEventListener('resize', ensureInputVisible);
+                                            } else {
+                                                window.addEventListener('resize', ensureInputVisible);
+                                            }
                                         })();
                                     """.trimIndent()
                                     view?.evaluateJavascript(jsInject, null)
                                 }
+                            }
+
+                            override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
+                                super.doUpdateVisitedHistory(view, url, isReload)
+                                canGoBack = view?.canGoBack() ?: false
                             }
 
                             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
@@ -339,22 +380,24 @@ fun WebRemoteScreen(
             }
         }
 
-        // Floating Action Button (FAB)
-        FloatingActionButton(
-            onClick = { showFabMenu = !showFabMenu },
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(16.dp)
-                .size(48.dp),
-            shape = CircleShape,
-            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f),
-            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-        ) {
-            Icon(
-                if (showFabMenu) Icons.Filled.Close else Icons.Filled.Menu,
-                contentDescription = "菜单",
-                modifier = Modifier.size(24.dp)
-            )
+        // Floating Action Button (FAB) - hide when virtual keyboard is open so it doesn't block inputs
+        if (!isImeVisible) {
+            FloatingActionButton(
+                onClick = { showFabMenu = !showFabMenu },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(16.dp)
+                    .size(48.dp),
+                shape = CircleShape,
+                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f),
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+            ) {
+                Icon(
+                    if (showFabMenu) Icons.Filled.Close else Icons.Filled.Menu,
+                    contentDescription = "菜单",
+                    modifier = Modifier.size(24.dp)
+                )
+            }
         }
     }
 

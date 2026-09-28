@@ -1,6 +1,7 @@
 package com.antigravity.remote.ui.navigation
 
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -72,7 +73,12 @@ fun AppNavigation(viewModel: MainViewModel) {
         NavHost(
             navController = navController,
             startDestination = Screen.WebRemote.route,
-            modifier = Modifier.padding(if (isFullscreenWeb) PaddingValues(0.dp) else innerPadding)
+            modifier = Modifier
+                .padding(
+                    top = innerPadding.calculateTopPadding(),
+                    bottom = if (isFullscreenWeb) 0.dp else innerPadding.calculateBottomPadding()
+                )
+                .imePadding()
         ) {
             composable(Screen.WebRemote.route) {
                 com.antigravity.remote.ui.screen.WebRemoteScreen(
