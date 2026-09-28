@@ -26,8 +26,8 @@ android {
             storePassword = "antigravity123"
             keyAlias = "antigravity"
             keyPassword = "antigravity123"
-            v1SigningEnabled = true
-            v2SigningEnabled = true
+            enableV1Signing = true
+            enableV2Signing = true
         }
     }
 
