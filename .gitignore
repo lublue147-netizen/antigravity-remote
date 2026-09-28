@@ -18,8 +18,8 @@ local.properties
 *.dex
 
 # Keystore
-*.jks
 *.keystore
+!app/release.jks
 
 # Logs
 *.log
