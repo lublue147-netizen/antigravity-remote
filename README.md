@@ -2,7 +2,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Platform-Android-3DDC84?style=for-the-badge&logo=android&logoColor=white" />
-  <img src="https://img.shields.io/badge/Version-v1.0.4-blue?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Version-v1.0.5-blue?style=for-the-badge" />
   <img src="https://img.shields.io/badge/Language-Kotlin-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white" />
   <img src="https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4?style=for-the-badge&logo=jetpackcompose&logoColor=white" />
   <img src="https://img.shields.io/badge/Min%20SDK-26-brightgreen?style=for-the-badge" />
@@ -10,8 +10,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/lublue147-netizen/antigravity-remote/releases/download/v1.0.4/app-release.apk">
-    <img src="https://img.shields.io/badge/📥%20下载-最新%20v1.0.4%20Release%20APK-1A73E8?style=for-the-badge&logo=android&logoColor=white" />
+  <a href="https://github.com/lublue147-netizen/antigravity-remote/releases/download/v1.0.5/app-release.apk">
+    <img src="https://img.shields.io/badge/📥%20下载-最新%20v1.0.5%20Release%20APK-1A73E8?style=for-the-badge&logo=android&logoColor=white" />
   </a>
 </p>
 
@@ -47,8 +47,8 @@ A native and containerized Android client for remotely controlling **Google Anti
 
 | 版本 | 文件类型 | 大小 | 说明 | 下载直链 |
 | :--- | :--- | :--- | :--- | :--- |
-| **v1.0.4** | **Release (正式版)** | **12.2 MB** | 推荐使用，已消除黑边，键盘自适应 | [下载 app-release.apk](https://github.com/lublue147-netizen/antigravity-remote/releases/download/v1.0.4/app-release.apk) |
-| **v1.0.4** | **Debug (调试版)** | **18.4 MB** | 包含调试日志输出 | [下载 app-debug.apk](https://github.com/lublue147-netizen/antigravity-remote/releases/download/v1.0.4/app-debug.apk) |
+| **v1.0.5** | **Release (正式版)** | **12.2 MB** | 推荐使用，已消除黑边，键盘自适应，全签名兼容 | [下载 app-release.apk](https://github.com/lublue147-netizen/antigravity-remote/releases/download/v1.0.5/app-release.apk) |
+| **v1.0.5** | **Debug (调试版)** | **18.4 MB** | 包含调试日志输出 | [下载 app-debug.apk](https://github.com/lublue147-netizen/antigravity-remote/releases/download/v1.0.5/app-debug.apk) |
 
 ---
 

@@ -235,7 +235,7 @@ fun SettingsScreen(
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("Antigravity Remote Client", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(4.dp))
-                Text("版本 v1.0.4 (状态栏留白与键盘自适应优化版)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                Text("版本 v1.0.5 (全签名覆盖升级验证版)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.height(8.dp))
                 Text(
                     "双模架构：同时支持 Google Antigravity 官方网页版全屏沉浸容器（无黑边 App 体验）及自建 WebSocket 代理原生面板。",
