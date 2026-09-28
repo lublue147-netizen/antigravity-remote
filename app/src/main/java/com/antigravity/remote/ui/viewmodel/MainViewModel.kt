@@ -35,6 +35,12 @@ class MainViewModel @Inject constructor(
     val notificationsEnabled = settingsDataStore.notificationsEnabled.stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5000), true
     )
+    val immersiveMode = settingsDataStore.immersiveMode.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5000), true
+    )
+    val fitScreen = settingsDataStore.fitScreen.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5000), true
+    )
 
     private val _selectedSessionId = MutableStateFlow<String?>(null)
     val selectedSessionId = _selectedSessionId.asStateFlow()
@@ -103,5 +109,13 @@ class MainViewModel @Inject constructor(
 
     fun updateNotificationsEnabled(enabled: Boolean) {
         viewModelScope.launch { settingsDataStore.setNotificationsEnabled(enabled) }
+    }
+
+    fun updateImmersiveMode(enabled: Boolean) {
+        viewModelScope.launch { settingsDataStore.setImmersiveMode(enabled) }
+    }
+
+    fun updateFitScreen(enabled: Boolean) {
+        viewModelScope.launch { settingsDataStore.setFitScreen(enabled) }
     }
 }

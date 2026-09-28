@@ -23,6 +23,8 @@ class SettingsDataStore @Inject constructor(
         val DARK_THEME = booleanPreferencesKey("dark_theme")
         val NOTIFICATIONS_ENABLED = booleanPreferencesKey("notifications_enabled")
         val USE_TLS = booleanPreferencesKey("use_tls")
+        val IMMERSIVE_MODE = booleanPreferencesKey("immersive_mode")
+        val FIT_SCREEN = booleanPreferencesKey("fit_screen")
     }
 
     val serverUrl: Flow<String> = context.dataStore.data.map { it[Keys.SERVER_URL] ?: "" }
@@ -31,6 +33,8 @@ class SettingsDataStore @Inject constructor(
     val darkTheme: Flow<Boolean> = context.dataStore.data.map { it[Keys.DARK_THEME] ?: true }
     val notificationsEnabled: Flow<Boolean> = context.dataStore.data.map { it[Keys.NOTIFICATIONS_ENABLED] ?: true }
     val useTls: Flow<Boolean> = context.dataStore.data.map { it[Keys.USE_TLS] ?: false }
+    val immersiveMode: Flow<Boolean> = context.dataStore.data.map { it[Keys.IMMERSIVE_MODE] ?: true }
+    val fitScreen: Flow<Boolean> = context.dataStore.data.map { it[Keys.FIT_SCREEN] ?: true }
 
     suspend fun setServerUrl(url: String) {
         context.dataStore.edit { it[Keys.SERVER_URL] = url }
@@ -54,5 +58,13 @@ class SettingsDataStore @Inject constructor(
 
     suspend fun setUseTls(enabled: Boolean) {
         context.dataStore.edit { it[Keys.USE_TLS] = enabled }
+    }
+
+    suspend fun setImmersiveMode(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.IMMERSIVE_MODE] = enabled }
+    }
+
+    suspend fun setFitScreen(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.FIT_SCREEN] = enabled }
     }
 }

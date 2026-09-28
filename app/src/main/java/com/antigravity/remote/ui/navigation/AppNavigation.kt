@@ -28,36 +28,41 @@ fun AppNavigation(viewModel: MainViewModel) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
+    val immersiveMode by viewModel.immersiveMode.collectAsState()
+
+    val isFullscreenWeb = currentRoute == Screen.WebRemote.route && immersiveMode
 
     val items = listOf(Screen.WebRemote, Screen.Dashboard, Screen.Chat, Screen.Settings)
 
     Scaffold(
         bottomBar = {
-            NavigationBar {
-                items.forEach { screen ->
-                    NavigationBarItem(
-                        icon = {
-                            when (screen) {
-                                Screen.WebRemote -> Icon(Icons.Filled.Home, contentDescription = screen.title)
-                                Screen.Dashboard -> Icon(Icons.Filled.Dashboard, contentDescription = screen.title)
-                                Screen.Chat -> Icon(Icons.Filled.Chat, contentDescription = screen.title)
-                                Screen.Settings -> Icon(Icons.Filled.Settings, contentDescription = screen.title)
-                            }
-                        },
-                        label = { Text(screen.title) },
-                        selected = currentRoute == screen.route,
-                        onClick = {
-                            if (currentRoute != screen.route) {
-                                navController.navigate(screen.route) {
-                                    popUpTo(navController.graph.startDestinationId) {
-                                        saveState = true
+            if (!isFullscreenWeb) {
+                NavigationBar {
+                    items.forEach { screen ->
+                        NavigationBarItem(
+                            icon = {
+                                when (screen) {
+                                    Screen.WebRemote -> Icon(Icons.Filled.Home, contentDescription = screen.title)
+                                    Screen.Dashboard -> Icon(Icons.Filled.Dashboard, contentDescription = screen.title)
+                                    Screen.Chat -> Icon(Icons.Filled.Chat, contentDescription = screen.title)
+                                    Screen.Settings -> Icon(Icons.Filled.Settings, contentDescription = screen.title)
+                                }
+                            },
+                            label = { Text(screen.title) },
+                            selected = currentRoute == screen.route,
+                            onClick = {
+                                if (currentRoute != screen.route) {
+                                    navController.navigate(screen.route) {
+                                        popUpTo(navController.graph.startDestinationId) {
+                                            saveState = true
+                                        }
+                                        launchSingleTop = true
+                                        restoreState = true
                                     }
-                                    launchSingleTop = true
-                                    restoreState = true
                                 }
                             }
-                        }
-                    )
+                        )
+                    }
                 }
             }
         }
@@ -65,10 +70,21 @@ fun AppNavigation(viewModel: MainViewModel) {
         NavHost(
             navController = navController,
             startDestination = Screen.WebRemote.route,
-            modifier = Modifier.padding(innerPadding)
+            modifier = Modifier.padding(if (isFullscreenWeb) androidx.compose.foundation.layout.PaddingValues(0.dp) else innerPadding)
         ) {
             composable(Screen.WebRemote.route) {
-                com.antigravity.remote.ui.screen.WebRemoteScreen(viewModel = viewModel)
+                com.antigravity.remote.ui.screen.WebRemoteScreen(
+                    viewModel = viewModel,
+                    onNavigateToTab = { route ->
+                        navController.navigate(route) {
+                            popUpTo(navController.graph.startDestinationId) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
+                )
             }
             composable(Screen.Dashboard.route) {
                 DashboardScreen(

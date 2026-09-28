@@ -26,6 +26,8 @@ fun SettingsScreen(
     val authToken by viewModel.authToken.collectAsState()
     val darkTheme by viewModel.darkTheme.collectAsState()
     val notificationsEnabled by viewModel.notificationsEnabled.collectAsState()
+    val immersiveMode by viewModel.immersiveMode.collectAsState()
+    val fitScreen by viewModel.fitScreen.collectAsState()
 
     var editWebUrl by remember(webRemoteUrl) { mutableStateOf(webRemoteUrl) }
     var editServerUrl by remember(serverUrl) { mutableStateOf(serverUrl) }
@@ -172,6 +174,30 @@ fun SettingsScreen(
         ) {
             Column {
                 ListItem(
+                    headlineContent = { Text("沉浸式全屏 App 体验 (推荐)") },
+                    supportingContent = { Text("隐藏顶栏与底栏，像独立原生 App 一样全屏沉浸运行，消除黑边") },
+                    leadingContent = { Icon(Icons.Filled.Home, contentDescription = null) },
+                    trailingContent = {
+                        Switch(
+                            checked = immersiveMode,
+                            onCheckedChange = { viewModel.updateImmersiveMode(it) }
+                        )
+                    }
+                )
+                HorizontalDivider()
+                ListItem(
+                    headlineContent = { Text("网页自适应铺满消除黑边") },
+                    supportingContent = { Text("自动注入移动端 Viewport 与自适应高度，解决桌面版上下留白") },
+                    leadingContent = { Icon(Icons.Filled.Refresh, contentDescription = null) },
+                    trailingContent = {
+                        Switch(
+                            checked = fitScreen,
+                            onCheckedChange = { viewModel.updateFitScreen(it) }
+                        )
+                    }
+                )
+                HorizontalDivider()
+                ListItem(
                     headlineContent = { Text("暗色模式") },
                     supportingContent = { Text("适配深色界面主题") },
                     leadingContent = { Icon(Icons.Filled.DarkMode, contentDescription = null) },
@@ -209,10 +235,10 @@ fun SettingsScreen(
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("Antigravity Remote Client", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(4.dp))
-                Text("版本 v1.0.1", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                Text("版本 v1.0.2 (全屏自适应 App 优化版)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "双模架构：同时支持 Google Antigravity 官方网页版远程控制及自建 WebSocket 代理服务。",
+                    "双模架构：同时支持 Google Antigravity 官方网页版全屏沉浸容器（无黑边 App 体验）及自建 WebSocket 代理原生面板。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
