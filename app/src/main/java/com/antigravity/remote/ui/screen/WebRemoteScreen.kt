@@ -8,6 +8,8 @@ import android.view.View
 import android.view.ViewGroup
 import android.webkit.*
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -33,6 +35,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.antigravity.remote.ui.viewmodel.MainViewModel
+import com.antigravity.remote.util.BlobDownloadInterface
+import com.antigravity.remote.util.DownloadHelper
 
 @OptIn(ExperimentalMaterial3Api::class)
 @SuppressLint("SetJavaScriptEnabled")
@@ -52,6 +56,16 @@ fun WebRemoteScreen(
     var progress by remember { mutableFloatStateOf(0f) }
     var showUrlDialog by remember { mutableStateOf(false) }
     var showFabMenu by remember { mutableStateOf(false) }
+
+    var fileChooserCallback by remember { mutableStateOf<ValueCallback<Array<Uri>>?>(null) }
+    val fileChooserLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val data = result.data
+        val uris = WebChromeClient.FileChooserParams.parseResult(result.resultCode, data)
+        fileChooserCallback?.onReceiveValue(uris)
+        fileChooserCallback = null
+    }
 
     val isImeVisible = WindowInsets.ime.asPaddingValues().calculateBottomPadding() > 0.dp
 
@@ -148,6 +162,8 @@ fun WebRemoteScreen(
                             allowFileAccess = true
                             allowContentAccess = true
                             cacheMode = WebSettings.LOAD_DEFAULT
+                            setSupportMultipleWindows(true)
+                            javaScriptCanOpenWindowsAutomatically = true
 
                             // Chrome mobile UA without '; wv' for Google sign-in compatibility
                             val defaultUa = userAgentString
@@ -156,6 +172,21 @@ fun WebRemoteScreen(
                                 ua = "$ua Mobile"
                             }
                             userAgentString = ua
+                        }
+
+                        // Register Javascript Interface for blob: and data: file downloads
+                        addJavascriptInterface(BlobDownloadInterface(context), "AndroidBlobDownloader")
+
+                        // Register DownloadListener for standard HTTP/HTTPS downloads and fallback handling
+                        setDownloadListener { url, userAgent, contentDisposition, mimetype, _ ->
+                            DownloadHelper.handleDownloadListener(
+                                context = context,
+                                webView = this,
+                                url = url,
+                                userAgent = userAgent,
+                                contentDisposition = contentDisposition,
+                                mimetype = mimetype
+                            )
                         }
 
                         webViewClient = object : WebViewClient() {
@@ -170,7 +201,83 @@ fun WebRemoteScreen(
                                 isLoading = false
                                 canGoBack = view?.canGoBack() ?: false
 
-                                // Inject CSS and viewport fixes to eliminate top/bottom black borders & auto scroll to input
+                                // 1. Inject download hook for intercepting <a> click, blob:, data: links
+                                val jsDownloadHook = """
+                                    (function() {
+                                        if (window.__antigravityDownloadHooked) return;
+                                        window.__antigravityDownloadHooked = true;
+
+                                        function triggerBlobDownload(href, downloadName) {
+                                            if (!href) return false;
+                                            if (href.startsWith('data:')) {
+                                                var comma = href.indexOf(',');
+                                                var b64 = comma !== -1 ? href.substring(comma + 1) : href;
+                                                var header = href.substring(0, comma);
+                                                var mime = header.split(';')[0].replace('data:', '') || 'application/octet-stream';
+                                                var fname = downloadName || ('download_' + Date.now());
+                                                if (window.AndroidBlobDownloader) {
+                                                    window.AndroidBlobDownloader.getBase64FromBlobData(b64, mime, fname);
+                                                }
+                                                return true;
+                                            } else if (href.startsWith('blob:')) {
+                                                fetch(href)
+                                                    .then(function(res) {
+                                                        var mime = res.headers.get('content-type') || 'application/octet-stream';
+                                                        return res.blob().then(function(b) { return { blob: b, mime: mime }; });
+                                                    })
+                                                    .then(function(obj) {
+                                                        var reader = new FileReader();
+                                                        reader.onloadend = function() {
+                                                            var res = reader.result;
+                                                            var b64 = res.indexOf(',') !== -1 ? res.substring(res.indexOf(',') + 1) : res;
+                                                            var fname = downloadName || ('download_' + Date.now());
+                                                            if (window.AndroidBlobDownloader) {
+                                                                window.AndroidBlobDownloader.getBase64FromBlobData(b64, obj.mime, fname);
+                                                            }
+                                                        };
+                                                        reader.readAsDataURL(obj.blob);
+                                                    })
+                                                    .catch(function(e) {
+                                                        console.error('Blob fetch failed: ' + e);
+                                                    });
+                                                return true;
+                                            }
+                                            return false;
+                                        }
+
+                                        document.addEventListener('click', function(e) {
+                                            var el = e.target;
+                                            while (el && el.tagName !== 'A') {
+                                                el = el.parentElement;
+                                            }
+                                            if (el && el.tagName === 'A') {
+                                                var href = el.getAttribute('href') || el.href;
+                                                var download = el.getAttribute('download');
+                                                if (download !== null || (href && (href.startsWith('blob:') || href.startsWith('data:')))) {
+                                                    if (triggerBlobDownload(href, download || '')) {
+                                                        e.preventDefault();
+                                                        e.stopPropagation();
+                                                    }
+                                                }
+                                            }
+                                        }, true);
+
+                                        var origClick = HTMLAnchorElement.prototype.click;
+                                        HTMLAnchorElement.prototype.click = function() {
+                                            var href = this.getAttribute('href') || this.href;
+                                            var download = this.getAttribute('download');
+                                            if (download !== null || (href && (href.startsWith('blob:') || href.startsWith('data:')))) {
+                                                if (triggerBlobDownload(href, download || '')) {
+                                                    return;
+                                                }
+                                            }
+                                            origClick.apply(this, arguments);
+                                        };
+                                    })();
+                                """.trimIndent()
+                                view?.evaluateJavascript(jsDownloadHook, null)
+
+                                // 2. Inject CSS and viewport fixes to eliminate top/bottom black borders & auto scroll to input
                                 if (fitScreen) {
                                     val jsInject = """
                                         (function() {
@@ -243,6 +350,33 @@ fun WebRemoteScreen(
                             }
 
                             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                                val uri = request?.url ?: return false
+                                val urlStr = uri.toString()
+                                val scheme = uri.scheme?.lowercase()
+
+                                if (scheme == "http" || scheme == "https") {
+                                    if (DownloadHelper.isDownloadableUrl(urlStr)) {
+                                        DownloadHelper.downloadHttpUrl(
+                                            context = context,
+                                            url = urlStr,
+                                            userAgent = view?.settings?.userAgentString ?: "",
+                                            contentDisposition = null,
+                                            mimeType = null
+                                        )
+                                        return true
+                                    }
+                                    return false
+                                } else if (scheme != null && scheme != "about" && scheme != "data" && scheme != "blob" && scheme != "javascript") {
+                                    return try {
+                                        val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+                                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                        }
+                                        context.startActivity(intent)
+                                        true
+                                    } catch (e: Exception) {
+                                        false
+                                    }
+                                }
                                 return false
                             }
                         }
@@ -251,6 +385,57 @@ fun WebRemoteScreen(
                             override fun onProgressChanged(view: WebView?, newProgress: Int) {
                                 super.onProgressChanged(view, newProgress)
                                 progress = newProgress / 100f
+                            }
+
+                            override fun onCreateWindow(
+                                view: WebView?,
+                                isDialog: Boolean,
+                                isUserGesture: Boolean,
+                                resultMsg: android.os.Message?
+                            ): Boolean {
+                                val newWebView = WebView(view!!.context).apply {
+                                    settings.javaScriptEnabled = true
+                                    webViewClient = object : WebViewClient() {
+                                        override fun shouldOverrideUrlLoading(v: WebView?, req: WebResourceRequest?): Boolean {
+                                            val targetUrl = req?.url?.toString() ?: return false
+                                            if (DownloadHelper.isDownloadableUrl(targetUrl)) {
+                                                DownloadHelper.downloadHttpUrl(
+                                                    context = context,
+                                                    url = targetUrl,
+                                                    userAgent = settings.userAgentString
+                                                )
+                                            } else {
+                                                view.loadUrl(targetUrl)
+                                            }
+                                            return true
+                                        }
+                                    }
+                                }
+                                val transport = resultMsg?.obj as? WebView.WebViewTransport
+                                transport?.webView = newWebView
+                                resultMsg?.sendToTarget()
+                                return true
+                            }
+
+                            override fun onShowFileChooser(
+                                view: WebView?,
+                                filePathCallback: ValueCallback<Array<Uri>>?,
+                                fileChooserParams: FileChooserParams?
+                            ): Boolean {
+                                fileChooserCallback?.onReceiveValue(null)
+                                fileChooserCallback = filePathCallback
+                                return try {
+                                    val intent = fileChooserParams?.createIntent() ?: Intent(Intent.ACTION_GET_CONTENT).apply {
+                                        type = "*/*"
+                                        addCategory(Intent.CATEGORY_OPENABLE)
+                                    }
+                                    fileChooserLauncher.launch(intent)
+                                    true
+                                } catch (e: Exception) {
+                                    fileChooserCallback?.onReceiveValue(null)
+                                    fileChooserCallback = null
+                                    false
+                                }
                             }
                         }
 
