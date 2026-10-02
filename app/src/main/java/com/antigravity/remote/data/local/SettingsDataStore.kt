@@ -30,6 +30,8 @@ class SettingsDataStore @Inject constructor(
         val FIT_SCREEN = booleanPreferencesKey("fit_screen")
     }
 
+    val isLoaded: Flow<Boolean> = context.dataStore.data.map { true }
+
     val serverUrl: Flow<String> = context.dataStore.data.map { it[Keys.SERVER_URL] ?: "" }
     val webRemoteUrl: Flow<String> = context.dataStore.data.map { it[Keys.WEB_REMOTE_URL] ?: "https://antigravity.google.com" }
     val lastActiveUrl: Flow<String> = context.dataStore.data.map { it[Keys.LAST_ACTIVE_URL] ?: "" }

@@ -109,7 +109,9 @@ fun SettingsScreen(
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
                         onClick = {
-                            viewModel.updateWebRemoteUrl(editWebUrl.trim())
+                            val trimmed = editWebUrl.trim()
+                            viewModel.updateWebRemoteUrl(trimmed)
+                            viewModel.requestLoadUrl(trimmed)
                             onNavigateToWeb()
                         },
                         modifier = Modifier.weight(1f)
@@ -262,7 +264,7 @@ fun SettingsScreen(
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("Antigravity Remote Client", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(4.dp))
-                Text("版本 v1.0.7 (多账号自动记忆与快速切换版)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                Text("版本 v1.0.8 (多账号自动记忆与快速切换版)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.height(8.dp))
                 Text(
                     "双模架构：同时支持 Google Antigravity 官方网页版全屏沉浸容器（多账号自动选择与记忆、全能下载与上传）及自建 WebSocket 代理原生面板。",

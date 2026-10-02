@@ -51,7 +51,7 @@ object AccountUrlHelper {
     }
 
     /**
-     * Builds a URL pointing to a specific account index (/u/{accountIndex}/).
+     * Builds a URL pointing to a specific account index (/u/{accountIndex}/ and authuser={accountIndex}).
      */
     fun buildAccountUrl(baseUrlOrCurrent: String, accountIndex: Int): String {
         val raw = if (baseUrlOrCurrent.isBlank()) "https://antigravity.google.com" else baseUrlOrCurrent.trim()
@@ -61,10 +61,15 @@ object AccountUrlHelper {
             null
         }
 
-        // 1. If URL already has /u/\d+, replace it directly
+        // 1. If URL already has /u/\d+, replace it directly and update authuser if present
         val uReplaceRegex = Regex("""/u/\d+""")
         if (uReplaceRegex.containsMatchIn(raw)) {
-            return raw.replace(uReplaceRegex, "/u/$accountIndex")
+            var res = raw.replace(uReplaceRegex, "/u/$accountIndex")
+            val authUserReplaceRegex = Regex("""([?&])authuser=\d+""")
+            if (authUserReplaceRegex.containsMatchIn(res)) {
+                res = res.replace(authUserReplaceRegex, "$1authuser=$accountIndex")
+            }
+            return res
         }
 
         // 2. If URL has authuser query parameter, update it
@@ -73,12 +78,12 @@ object AccountUrlHelper {
             return raw.replace(authUserReplaceRegex, "$1authuser=$accountIndex")
         }
 
-        // 3. For antigravity.google.com domains, prepend /u/{accountIndex} to the path
+        // 3. For antigravity.google.com domains, prepend /u/{accountIndex} to path and add authuser query parameter
         if (uri != null && uri.host?.contains("antigravity.google.com") == true) {
             val scheme = uri.scheme ?: "https"
             val host = uri.host ?: "antigravity.google.com"
             val path = uri.path ?: ""
-            val query = if (uri.query.isNullOrBlank()) "" else "?${uri.query}"
+            val query = if (uri.query.isNullOrBlank()) "authuser=$accountIndex" else "${uri.query}&authuser=$accountIndex"
             val newPath = if (path.isEmpty() || path == "/") {
                 "/u/$accountIndex/"
             } else if (path.startsWith("/")) {
@@ -86,11 +91,11 @@ object AccountUrlHelper {
             } else {
                 "/u/$accountIndex/$path"
             }
-            return "$scheme://$host$newPath$query"
+            return "$scheme://$host$newPath?$query"
         }
 
         // 4. Default fallback
-        return if (raw.endsWith("/")) "${raw}u/$accountIndex/" else "$raw/u/$accountIndex/"
+        return if (raw.endsWith("/")) "${raw}u/$accountIndex/?authuser=$accountIndex" else "$raw/u/$accountIndex/?authuser=$accountIndex"
     }
 
     /**

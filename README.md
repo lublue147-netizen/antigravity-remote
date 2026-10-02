@@ -2,7 +2,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Platform-Android-3DDC84?style=for-the-badge&logo=android&logoColor=white" />
-  <img src="https://img.shields.io/badge/Version-v1.0.7-blue?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Version-v1.0.8-blue?style=for-the-badge" />
   <img src="https://img.shields.io/badge/Language-Kotlin-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white" />
   <img src="https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4?style=for-the-badge&logo=jetpackcompose&logoColor=white" />
   <img src="https://img.shields.io/badge/Min%20SDK-26-brightgreen?style=for-the-badge" />
@@ -10,8 +10,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/lublue147-netizen/antigravity-remote/releases/download/v1.0.7/app-release.apk">
-    <img src="https://img.shields.io/badge/📥%20下载-最新%20v1.0.7%20Release%20APK-1A73E8?style=for-the-badge&logo=android&logoColor=white" />
+  <a href="https://github.com/lublue147-netizen/antigravity-remote/releases/download/v1.0.8/app-release.apk">
+    <img src="https://img.shields.io/badge/📥%20下载-最新%20v1.0.8%20Release%20APK-1A73E8?style=for-the-badge&logo=android&logoColor=white" />
   </a>
 </p>
 
@@ -24,11 +24,13 @@ A native and containerized Android client for remotely controlling **Google Anti
 ## 🌟 核心特性 (Features)
 
 ### 1. 🌐 官方网页版全屏沉浸容器 (Web Remote Container)
-- **多账号自动选择与持久记忆 (v1.0.7 重磅优化)**：
-  - **自动选择上次账号**：自动侦测并记录每次会话与浏览使用的 Google 账号（`/u/0/`、`/u/1/`、`/u/2/`...）。重新打开应用时**自动直达上次使用的账号**，告别每次反复手动重选的麻烦！
-  - **防止误重置**：修复 Compose 界面刷新与键盘弹出时 WebView 错误重载至默认根路径的问题，保持当前工作区与账号会话稳定。
+- **多账号自动选择与冷启动零重置 (v1.0.8 深度强化)**：
+  - **首帧账号零重置**：彻底消除冷启动时 DataStore 本地读取延迟与 Compose 重组引起的重载竞态，等待首选项就绪后在首次网络请求直接带上目标账号，**绝不再闪退/重载回默认账号 (u/0)**。
+  - **路径 + 参数双重锁定**：将 Google 账号标识同时注入 `/u/{index}/` 路径与 `?authuser={index}` 参数，确保 Google GFE 网关无论读取哪个层级都能 100% 精确选中目标账号。
+  - **全链路单向事件分发**：彻底移除 `AndroidView.update` 中的 URL 比较重载逻辑，任何界面重组或软键盘开合都不会触发误刷新。
+  - **头像弹窗与新标签深度拦截**：深度拦截 Google 右上角头像菜单中的 `window.open` 与 `target="_blank"` 账号切换链接，强制在当前 WebView 内部原位无缝跳转，防止丢失上下文。
+  - **全生命周期 Cookie 深度落盘**：集成 Activity `onPause`/`onStop` 及页面开始/结束监听，实时调用 `CookieManager.flush()` 确保 Google OAuth 凭证安全持久化。
   - **便捷多账号切换面板**：悬浮菜单直观展示当前账号角标（如 `u/1`），支持一键秒切至 `u/0` / `u/1` / `u/2` / `u/3`、唤起 Google 官方账号选择器或新增账号。
-  - **Cookie 深度落盘**：集成 Activity 生命周期与页面路由监听，实时调用 `CookieManager.flush()` 确保 Google OAuth 凭证与选择器状态安全持久化。
 - **零黑边自适应**：自动注入 Viewport 与 CSS，将桌面版 Antigravity 界面满屏拉伸铺满移动设备屏幕，彻底消除 16:9 桌面版在长屏手机上的上下大黑边。
 - **全能文件下载支持**：
   - **原生 HTTP/HTTPS 下载**：自动附加 Google OAuth 登录 Cookie 和 User-Agent，接管系统 `DownloadManager` 下载任务。
@@ -57,8 +59,8 @@ A native and containerized Android client for remotely controlling **Google Anti
 
 | 版本 | 文件类型 | 说明 | 下载直链 |
 | :--- | :--- | :--- | :--- |
-| **v1.0.7** | **Release (正式版)** | 推荐使用，新增多账号自动选择与记忆、快捷账号切换，签名兼容 | [下载 app-release.apk](https://github.com/lublue147-netizen/antigravity-remote/releases/download/v1.0.7/app-release.apk) |
-| **v1.0.7** | **Debug (调试版)** | 包含调试日志输出 | [下载 app-debug.apk](https://github.com/lublue147-netizen/antigravity-remote/releases/download/v1.0.7/app-debug.apk) |
+| **v1.0.8** | **Release (正式版)** | 推荐使用，彻底修复退出重新进入不能自动选择最近使用账号的问题，签名兼容 | [下载 app-release.apk](https://github.com/lublue147-netizen/antigravity-remote/releases/download/v1.0.8/app-release.apk) |
+| **v1.0.8** | **Debug (调试版)** | 包含调试日志输出 | [下载 app-debug.apk](https://github.com/lublue147-netizen/antigravity-remote/releases/download/v1.0.8/app-debug.apk) |
 
 ---
 
@@ -88,7 +90,7 @@ com.antigravity.remote/
 │   └── repository/     # 统一 Repository 仓库层
 ├── di/                 # Dagger Hilt 依赖注入模块
 ├── util/
-│   ├── AccountUrlHelper.kt       # 多账号 URL 路由解析与切换工具
+│   ├── AccountUrlHelper.kt       # 多账号 URL 路由解析与双重参数注入工具
 │   ├── DownloadHelper.kt         # 系统下载管理器与文件导出辅助
 │   └── BlobDownloadInterface.kt  # Blob / Base64 数据流桥接接口
 └── ui/

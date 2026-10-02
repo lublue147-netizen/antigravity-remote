@@ -46,6 +46,7 @@ fun WebRemoteScreen(
     viewModel: MainViewModel,
     onNavigateToTab: (String) -> Unit = {}
 ) {
+    val isSettingsLoaded by viewModel.isSettingsLoaded.collectAsState()
     val webRemoteUrl by viewModel.webRemoteUrl.collectAsState()
     val lastActiveUrl by viewModel.lastActiveUrl.collectAsState()
     val lastAccountIndex by viewModel.lastAccountIndex.collectAsState()
@@ -61,9 +62,6 @@ fun WebRemoteScreen(
     var showUrlDialog by remember { mutableStateOf(false) }
     var showAccountDialog by remember { mutableStateOf(false) }
     var showFabMenu by remember { mutableStateOf(false) }
-
-    var hasRestoredSession by remember { mutableStateOf(false) }
-    var loadedExternalUrl by remember { mutableStateOf<String?>(null) }
 
     var fileChooserCallback by remember { mutableStateOf<ValueCallback<Array<Uri>>?>(null) }
     val fileChooserLauncher = rememberLauncherForActivityResult(
@@ -83,22 +81,24 @@ fun WebRemoteScreen(
         }
     }
 
-    // Auto-restore last active account URL on startup once DataStore emits
-    LaunchedEffect(lastActiveUrl, autoRestoreAccount) {
-        if (!hasRestoredSession && autoRestoreAccount && lastActiveUrl.isNotBlank() && AccountUrlHelper.isPersistableAppUrl(lastActiveUrl)) {
-            hasRestoredSession = true
-            loadedExternalUrl = lastActiveUrl
-            webViewInstance?.let { wv ->
-                if (wv.url != lastActiveUrl) {
-                    wv.loadUrl(lastActiveUrl)
-                }
-            }
+    // Listen for intentional navigation events requested by Settings or Dialogs
+    LaunchedEffect(Unit) {
+        viewModel.pendingLoadUrl.collect { targetUrl ->
+            webViewInstance?.loadUrl(targetUrl)
+            try {
+                CookieManager.getInstance().flush()
+            } catch (_: Exception) {}
         }
     }
 
-    // Flush CookieManager when screen is disposed
+    // Record last URL and flush CookieManager when screen is disposed
     DisposableEffect(Unit) {
         onDispose {
+            webViewInstance?.url?.let { currentUrl ->
+                if (AccountUrlHelper.isPersistableAppUrl(currentUrl)) {
+                    viewModel.recordActiveUrl(currentUrl)
+                }
+            }
             try {
                 CookieManager.getInstance().flush()
             } catch (_: Exception) {}
@@ -108,6 +108,17 @@ fun WebRemoteScreen(
     // Intercept hardware/gesture back to navigate inside webview history
     BackHandler(enabled = canGoBack) {
         webViewInstance?.goBack()
+    }
+
+    // If preferences are still loading from disk, display placeholder background
+    if (!isSettingsLoaded) {
+        Box(
+            modifier = Modifier.fillMaxSize().background(Color(0xFF121212)),
+            contentAlignment = Alignment.Center
+        ) {
+            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+        }
+        return
     }
 
     Box(modifier = Modifier.fillMaxSize().background(Color(0xFF121212))) {
@@ -143,7 +154,7 @@ fun WebRemoteScreen(
                         )
                         Spacer(Modifier.height(8.dp))
                         Text(
-                            "粘贴您的官方 Antigravity 远程会话链接（例如 https://antigravity.google.com/u/3/r/...），即可全屏无边框操控 AI Agent！",
+                            "粘贴您的官方 Antigravity 远程会话链接（例如 https://antigravity.google.com/u/1/r/...），即可全屏无边框操控 AI Agent！",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center
@@ -225,6 +236,10 @@ fun WebRemoteScreen(
                                 super.onPageStarted(view, url, favicon)
                                 isLoading = true
                                 canGoBack = view?.canGoBack() ?: false
+
+                                if (url != null && AccountUrlHelper.isPersistableAppUrl(url)) {
+                                    viewModel.recordActiveUrl(url)
+                                }
                             }
 
                             override fun onPageFinished(view: WebView?, url: String?) {
@@ -298,6 +313,10 @@ fun WebRemoteScreen(
                                                         e.stopPropagation();
                                                     }
                                                 }
+                                                // Keep Google account switcher links in current window
+                                                if (href && (href.indexOf('/u/') !== -1 || href.indexOf('authuser=') !== -1 || href.indexOf('accounts.google.') !== -1)) {
+                                                    el.target = '_self';
+                                                }
                                             }
                                         }, true);
 
@@ -311,6 +330,14 @@ fun WebRemoteScreen(
                                                 }
                                             }
                                             origClick.apply(this, arguments);
+                                        };
+
+                                        // Override window.open so Google popups don't open in empty background tabs
+                                        window.open = function(url) {
+                                            if (url) {
+                                                window.location.href = url;
+                                            }
+                                            return window;
                                         };
                                     })();
                                 """.trimIndent()
@@ -443,6 +470,15 @@ fun WebRemoteScreen(
                                 val newWebView = WebView(view!!.context).apply {
                                     settings.javaScriptEnabled = true
                                     webViewClient = object : WebViewClient() {
+                                        override fun onPageStarted(v: WebView?, url: String?, favicon: Bitmap?) {
+                                            super.onPageStarted(v, url, favicon)
+                                            if (!url.isNullOrBlank() && url != "about:blank") {
+                                                view?.loadUrl(url)
+                                                v?.stopLoading()
+                                                v?.destroy()
+                                            }
+                                        }
+
                                         override fun shouldOverrideUrlLoading(v: WebView?, req: WebResourceRequest?): Boolean {
                                             val targetUrl = req?.url?.toString() ?: return false
                                             if (DownloadHelper.isDownloadableUrl(targetUrl)) {
@@ -452,8 +488,10 @@ fun WebRemoteScreen(
                                                     userAgent = settings.userAgentString
                                                 )
                                             } else {
-                                                view.loadUrl(targetUrl)
+                                                view?.loadUrl(targetUrl)
                                             }
+                                            v?.stopLoading()
+                                            v?.destroy()
                                             return true
                                         }
                                     }
@@ -486,30 +524,27 @@ fun WebRemoteScreen(
                             }
                         }
 
-                        // Determine the startup URL: restore last used account URL if enabled
-                        val initialUrl = if (autoRestoreAccount && lastActiveUrl.isNotBlank() && AccountUrlHelper.isPersistableAppUrl(lastActiveUrl)) {
-                            hasRestoredSession = true
-                            lastActiveUrl
-                        } else if (autoRestoreAccount && lastAccountIndex > 0 && webRemoteUrl.isNotBlank() && !webRemoteUrl.contains("/u/")) {
-                            hasRestoredSession = true
-                            AccountUrlHelper.buildAccountUrl(webRemoteUrl, lastAccountIndex)
-                        } else if (webRemoteUrl.isNotBlank()) {
-                            webRemoteUrl
+                        // Determine the startup URL: restore last used account URL directly on cold start
+                        val initialUrl = if (autoRestoreAccount) {
+                            if (lastActiveUrl.isNotBlank() && AccountUrlHelper.isPersistableAppUrl(lastActiveUrl)) {
+                                lastActiveUrl
+                            } else if (lastAccountIndex > 0 && webRemoteUrl.isNotBlank()) {
+                                AccountUrlHelper.buildAccountUrl(webRemoteUrl, lastAccountIndex)
+                            } else if (webRemoteUrl.isNotBlank()) {
+                                webRemoteUrl
+                            } else {
+                                "https://antigravity.google.com"
+                            }
                         } else {
-                            "https://antigravity.google.com"
+                            if (webRemoteUrl.isNotBlank()) webRemoteUrl else "https://antigravity.google.com"
                         }
 
-                        loadedExternalUrl = initialUrl
                         loadUrl(initialUrl)
                         webViewInstance = this
                     }
                 },
-                update = { webView ->
-                    // Only reload when webRemoteUrl has been explicitly changed from outside (Settings or Dialog)
-                    if (webRemoteUrl.isNotBlank() && loadedExternalUrl != null && webRemoteUrl != loadedExternalUrl) {
-                        loadedExternalUrl = webRemoteUrl
-                        webView.loadUrl(webRemoteUrl)
-                    }
+                update = { _ ->
+                    // Intentionally empty. All programmatic loads are handled via viewModel.pendingLoadUrl
                 }
             )
         }
@@ -593,7 +628,7 @@ fun WebRemoteScreen(
                         Text("上一页", modifier = Modifier.weight(1f))
                     }
 
-                    // 3. 切换多账号 (NEW!)
+                    // 3. 切换多账号
                     TextButton(
                         onClick = {
                             showFabMenu = false
@@ -739,8 +774,7 @@ fun WebRemoteScreen(
                                     val newUrl = AccountUrlHelper.buildAccountUrl(currentUrl, index)
                                     viewModel.updateLastAccountIndex(index)
                                     viewModel.recordActiveUrl(newUrl)
-                                    loadedExternalUrl = newUrl
-                                    webViewInstance?.loadUrl(newUrl)
+                                    viewModel.requestLoadUrl(newUrl)
                                     try {
                                         CookieManager.getInstance().flush()
                                     } catch (_: Exception) {}
@@ -766,7 +800,7 @@ fun WebRemoteScreen(
                         }
                     }
 
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(8.dp))
                     HorizontalDivider()
                     Spacer(Modifier.height(4.dp))
 
@@ -775,8 +809,7 @@ fun WebRemoteScreen(
                         onClick = {
                             val current = webViewInstance?.url ?: "https://antigravity.google.com/"
                             val chooserUrl = AccountUrlHelper.getAccountChooserUrl(current)
-                            loadedExternalUrl = chooserUrl
-                            webViewInstance?.loadUrl(chooserUrl)
+                            viewModel.requestLoadUrl(chooserUrl)
                             showAccountDialog = false
                         },
                         modifier = Modifier.fillMaxWidth()
@@ -791,8 +824,7 @@ fun WebRemoteScreen(
                         onClick = {
                             val current = webViewInstance?.url ?: "https://antigravity.google.com/"
                             val addUrl = AccountUrlHelper.getAddAccountUrl(current)
-                            loadedExternalUrl = addUrl
-                            webViewInstance?.loadUrl(addUrl)
+                            viewModel.requestLoadUrl(addUrl)
                             showAccountDialog = false
                         },
                         modifier = Modifier.fillMaxWidth()
@@ -848,8 +880,7 @@ fun WebRemoteScreen(
                         }.trim()
                         viewModel.updateWebRemoteUrl(formatted)
                         viewModel.recordActiveUrl(formatted)
-                        loadedExternalUrl = formatted
-                        webViewInstance?.loadUrl(formatted)
+                        viewModel.requestLoadUrl(formatted)
                         try {
                             CookieManager.getInstance().flush()
                         } catch (_: Exception) {}

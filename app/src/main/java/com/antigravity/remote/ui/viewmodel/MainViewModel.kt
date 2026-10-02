@@ -17,6 +17,10 @@ class MainViewModel @Inject constructor(
     private val settingsDataStore: SettingsDataStore
 ) : ViewModel() {
 
+    val isSettingsLoaded = settingsDataStore.isLoaded.stateIn(
+        viewModelScope, SharingStarted.Eagerly, false
+    )
+
     val connectionState = repository.connectionState
     val sessions = repository.sessions
     val messages = repository.messages
@@ -51,6 +55,13 @@ class MainViewModel @Inject constructor(
     val fitScreen = settingsDataStore.fitScreen.stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5000), true
     )
+
+    private val _pendingLoadUrl = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val pendingLoadUrl = _pendingLoadUrl.asSharedFlow()
+
+    fun requestLoadUrl(url: String) {
+        _pendingLoadUrl.tryEmit(url)
+    }
 
     private val _selectedSessionId = MutableStateFlow<String?>(null)
     val selectedSessionId = _selectedSessionId.asStateFlow()
@@ -105,6 +116,8 @@ class MainViewModel @Inject constructor(
             if (detectedIndex != null) {
                 settingsDataStore.setLastAccountIndex(detectedIndex)
             }
+            // Keep webRemoteUrl synchronized with active account URL
+            settingsDataStore.setWebRemoteUrl(cleanUrl)
         }
     }
 
