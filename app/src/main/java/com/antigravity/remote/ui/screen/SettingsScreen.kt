@@ -22,6 +22,9 @@ fun SettingsScreen(
     onNavigateToWeb: () -> Unit = {}
 ) {
     val webRemoteUrl by viewModel.webRemoteUrl.collectAsState()
+    val lastActiveUrl by viewModel.lastActiveUrl.collectAsState()
+    val lastAccountIndex by viewModel.lastAccountIndex.collectAsState()
+    val autoRestoreAccount by viewModel.autoRestoreAccount.collectAsState()
     val serverUrl by viewModel.serverUrl.collectAsState()
     val authToken by viewModel.authToken.collectAsState()
     val darkTheme by viewModel.darkTheme.collectAsState()
@@ -77,6 +80,30 @@ fun SettingsScreen(
                     maxLines = 3,
                     modifier = Modifier.fillMaxWidth()
                 )
+                Spacer(Modifier.height(12.dp))
+
+                // 多账号自动记忆与恢复
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                        Text("多账号自动记忆与恢复", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "当前记忆: 账号 $lastAccountIndex (/u/$lastAccountIndex/)" + 
+                                    if (lastActiveUrl.isNotBlank()) " · 重新进入时自动打开" else "",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Switch(
+                        checked = autoRestoreAccount,
+                        onCheckedChange = { viewModel.updateAutoRestoreAccount(it) }
+                    )
+                }
                 Spacer(Modifier.height(12.dp))
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -235,10 +262,10 @@ fun SettingsScreen(
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("Antigravity Remote Client", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(4.dp))
-                Text("版本 v1.0.6 (全能文件下载与弹窗上传支持版)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                Text("版本 v1.0.7 (多账号自动记忆与快速切换版)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "双模架构：同时支持 Google Antigravity 官方网页版全屏沉浸容器（无黑边 App 体验）及自建 WebSocket 代理原生面板。",
+                    "双模架构：同时支持 Google Antigravity 官方网页版全屏沉浸容器（多账号自动选择与记忆、全能下载与上传）及自建 WebSocket 代理原生面板。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

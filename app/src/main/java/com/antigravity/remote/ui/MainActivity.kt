@@ -1,6 +1,7 @@
 package com.antigravity.remote.ui
 
 import android.os.Bundle
+import android.webkit.CookieManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -24,5 +25,19 @@ class MainActivity : ComponentActivity() {
                 AppNavigation(viewModel = viewModel)
             }
         }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        try {
+            CookieManager.getInstance().flush()
+        } catch (_: Exception) {}
+    }
+
+    override fun onStop() {
+        super.onStop()
+        try {
+            CookieManager.getInstance().flush()
+        } catch (_: Exception) {}
     }
 }

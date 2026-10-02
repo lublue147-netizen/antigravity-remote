@@ -35,6 +35,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.antigravity.remote.ui.viewmodel.MainViewModel
+import com.antigravity.remote.util.AccountUrlHelper
 import com.antigravity.remote.util.BlobDownloadInterface
 import com.antigravity.remote.util.DownloadHelper
 
@@ -46,6 +47,9 @@ fun WebRemoteScreen(
     onNavigateToTab: (String) -> Unit = {}
 ) {
     val webRemoteUrl by viewModel.webRemoteUrl.collectAsState()
+    val lastActiveUrl by viewModel.lastActiveUrl.collectAsState()
+    val lastAccountIndex by viewModel.lastAccountIndex.collectAsState()
+    val autoRestoreAccount by viewModel.autoRestoreAccount.collectAsState()
     val immersiveMode by viewModel.immersiveMode.collectAsState()
     val fitScreen by viewModel.fitScreen.collectAsState()
     val context = LocalContext.current
@@ -55,7 +59,11 @@ fun WebRemoteScreen(
     var isLoading by remember { mutableStateOf(false) }
     var progress by remember { mutableFloatStateOf(0f) }
     var showUrlDialog by remember { mutableStateOf(false) }
+    var showAccountDialog by remember { mutableStateOf(false) }
     var showFabMenu by remember { mutableStateOf(false) }
+
+    var hasRestoredSession by remember { mutableStateOf(false) }
+    var loadedExternalUrl by remember { mutableStateOf<String?>(null) }
 
     var fileChooserCallback by remember { mutableStateOf<ValueCallback<Array<Uri>>?>(null) }
     val fileChooserLauncher = rememberLauncherForActivityResult(
@@ -72,6 +80,28 @@ fun WebRemoteScreen(
     LaunchedEffect(isImeVisible) {
         if (isImeVisible) {
             showFabMenu = false
+        }
+    }
+
+    // Auto-restore last active account URL on startup once DataStore emits
+    LaunchedEffect(lastActiveUrl, autoRestoreAccount) {
+        if (!hasRestoredSession && autoRestoreAccount && lastActiveUrl.isNotBlank() && AccountUrlHelper.isPersistableAppUrl(lastActiveUrl)) {
+            hasRestoredSession = true
+            loadedExternalUrl = lastActiveUrl
+            webViewInstance?.let { wv ->
+                if (wv.url != lastActiveUrl) {
+                    wv.loadUrl(lastActiveUrl)
+                }
+            }
+        }
+    }
+
+    // Flush CookieManager when screen is disposed
+    DisposableEffect(Unit) {
+        onDispose {
+            try {
+                CookieManager.getInstance().flush()
+            } catch (_: Exception) {}
         }
     }
 
@@ -147,8 +177,9 @@ fun WebRemoteScreen(
                         isFocusableInTouchMode = true
 
                         // Cookie persistence for Google authentication
-                        CookieManager.getInstance().setAcceptCookie(true)
-                        CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+                        val cookieManager = CookieManager.getInstance()
+                        cookieManager.setAcceptCookie(true)
+                        cookieManager.setAcceptThirdPartyCookies(this, true)
 
                         settings.apply {
                             javaScriptEnabled = true
@@ -200,6 +231,14 @@ fun WebRemoteScreen(
                                 super.onPageFinished(view, url)
                                 isLoading = false
                                 canGoBack = view?.canGoBack() ?: false
+
+                                // Automatically record active URL & account index for session resume
+                                if (url != null && AccountUrlHelper.isPersistableAppUrl(url)) {
+                                    viewModel.recordActiveUrl(url)
+                                    try {
+                                        CookieManager.getInstance().flush()
+                                    } catch (_: Exception) {}
+                                }
 
                                 // 1. Inject download hook for intercepting <a> click, blob:, data: links
                                 val jsDownloadHook = """
@@ -347,6 +386,14 @@ fun WebRemoteScreen(
                             override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
                                 super.doUpdateVisitedHistory(view, url, isReload)
                                 canGoBack = view?.canGoBack() ?: false
+
+                                // Also record URL on SPA client-side history updates (pushState / replaceState)
+                                if (url != null && AccountUrlHelper.isPersistableAppUrl(url)) {
+                                    viewModel.recordActiveUrl(url)
+                                    try {
+                                        CookieManager.getInstance().flush()
+                                    } catch (_: Exception) {}
+                                }
                             }
 
                             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
@@ -439,12 +486,28 @@ fun WebRemoteScreen(
                             }
                         }
 
-                        loadUrl(webRemoteUrl)
+                        // Determine the startup URL: restore last used account URL if enabled
+                        val initialUrl = if (autoRestoreAccount && lastActiveUrl.isNotBlank() && AccountUrlHelper.isPersistableAppUrl(lastActiveUrl)) {
+                            hasRestoredSession = true
+                            lastActiveUrl
+                        } else if (autoRestoreAccount && lastAccountIndex > 0 && webRemoteUrl.isNotBlank() && !webRemoteUrl.contains("/u/")) {
+                            hasRestoredSession = true
+                            AccountUrlHelper.buildAccountUrl(webRemoteUrl, lastAccountIndex)
+                        } else if (webRemoteUrl.isNotBlank()) {
+                            webRemoteUrl
+                        } else {
+                            "https://antigravity.google.com"
+                        }
+
+                        loadedExternalUrl = initialUrl
+                        loadUrl(initialUrl)
                         webViewInstance = this
                     }
                 },
                 update = { webView ->
-                    if (webView.url != webRemoteUrl && webRemoteUrl.isNotBlank()) {
+                    // Only reload when webRemoteUrl has been explicitly changed from outside (Settings or Dialog)
+                    if (webRemoteUrl.isNotBlank() && loadedExternalUrl != null && webRemoteUrl != loadedExternalUrl) {
+                        loadedExternalUrl = webRemoteUrl
                         webView.loadUrl(webRemoteUrl)
                     }
                 }
@@ -473,15 +536,34 @@ fun WebRemoteScreen(
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.95f)
                 ),
-                modifier = Modifier.width(200.dp).shadow(12.dp, RoundedCornerShape(16.dp))
+                modifier = Modifier.width(220.dp).shadow(12.dp, RoundedCornerShape(16.dp))
             ) {
                 Column(modifier = Modifier.padding(8.dp)) {
-                    Text(
-                        text = "快捷操作",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "快捷操作",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer
+                        ) {
+                            Text(
+                                text = "u/$lastAccountIndex",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
                     // 1. 刷新
@@ -511,7 +593,20 @@ fun WebRemoteScreen(
                         Text("上一页", modifier = Modifier.weight(1f))
                     }
 
-                    // 3. 修改链接
+                    // 3. 切换多账号 (NEW!)
+                    TextButton(
+                        onClick = {
+                            showFabMenu = false
+                            showAccountDialog = true
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Filled.AccountCircle, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("切换账号", modifier = Modifier.weight(1f))
+                    }
+
+                    // 4. 修改链接
                     TextButton(
                         onClick = {
                             showFabMenu = false
@@ -524,7 +619,7 @@ fun WebRemoteScreen(
                         Text("修改链接", modifier = Modifier.weight(1f))
                     }
 
-                    // 4. 打开原生会话列表
+                    // 5. 打开原生会话列表
                     TextButton(
                         onClick = {
                             showFabMenu = false
@@ -537,7 +632,7 @@ fun WebRemoteScreen(
                         Text("原生会话", modifier = Modifier.weight(1f))
                     }
 
-                    // 5. 设置
+                    // 6. 设置
                     TextButton(
                         onClick = {
                             showFabMenu = false
@@ -550,7 +645,7 @@ fun WebRemoteScreen(
                         Text("应用设置", modifier = Modifier.weight(1f))
                     }
 
-                    // 6. 切换沉浸模式
+                    // 7. 切换沉浸模式
                     TextButton(
                         onClick = {
                             viewModel.updateImmersiveMode(!immersiveMode)
@@ -586,16 +681,148 @@ fun WebRemoteScreen(
         }
     }
 
+    // Google Multi-Account Switch Dialog
+    if (showAccountDialog) {
+        AlertDialog(
+            onDismissRequest = { showAccountDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.AccountCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(8.dp))
+                    Text("多账号切换与管理")
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(
+                                "当前账号: 账号 $lastAccountIndex (/u/$lastAccountIndex/)",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "自动选择已生效：每次重新进入应用，会自动进入上次使用的账号及界面。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "快速切换至账号：",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    // Quick account buttons: u/0, u/1, u/2, u/3
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(0, 1, 2, 3).forEach { index ->
+                            val isCurrent = index == lastAccountIndex
+                            FilledTonalButton(
+                                onClick = {
+                                    val currentUrl = webViewInstance?.url ?: lastActiveUrl.ifBlank { webRemoteUrl }
+                                    val newUrl = AccountUrlHelper.buildAccountUrl(currentUrl, index)
+                                    viewModel.updateLastAccountIndex(index)
+                                    viewModel.recordActiveUrl(newUrl)
+                                    loadedExternalUrl = newUrl
+                                    webViewInstance?.loadUrl(newUrl)
+                                    try {
+                                        CookieManager.getInstance().flush()
+                                    } catch (_: Exception) {}
+                                    showAccountDialog = false
+                                },
+                                modifier = Modifier.weight(1f),
+                                colors = if (isCurrent) {
+                                    ButtonDefaults.filledTonalButtonColors(
+                                        containerColor = MaterialTheme.colorScheme.primary,
+                                        contentColor = MaterialTheme.colorScheme.onPrimary
+                                    )
+                                } else {
+                                    ButtonDefaults.filledTonalButtonColors()
+                                },
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
+                            ) {
+                                Text(
+                                    text = "u/$index" + if (isCurrent) " ✓" else "",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(4.dp))
+                    HorizontalDivider()
+                    Spacer(Modifier.height(4.dp))
+
+                    // Open Google Account Chooser
+                    OutlinedButton(
+                        onClick = {
+                            val current = webViewInstance?.url ?: "https://antigravity.google.com/"
+                            val chooserUrl = AccountUrlHelper.getAccountChooserUrl(current)
+                            loadedExternalUrl = chooserUrl
+                            webViewInstance?.loadUrl(chooserUrl)
+                            showAccountDialog = false
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Filled.AccountCircle, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("打开 Google 账号选择器")
+                    }
+
+                    // Add new Google account
+                    OutlinedButton(
+                        onClick = {
+                            val current = webViewInstance?.url ?: "https://antigravity.google.com/"
+                            val addUrl = AccountUrlHelper.getAddAccountUrl(current)
+                            loadedExternalUrl = addUrl
+                            webViewInstance?.loadUrl(addUrl)
+                            showAccountDialog = false
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("登录添加新 Google 账号")
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showAccountDialog = false }) {
+                    Text("关闭")
+                }
+            }
+        )
+    }
+
     // Change URL Dialog
     if (showUrlDialog) {
-        var inputUrl by remember { mutableStateOf(webRemoteUrl) }
+        val currentActive = webViewInstance?.url ?: lastActiveUrl.ifBlank { webRemoteUrl }
+        var inputUrl by remember { mutableStateOf(currentActive) }
         AlertDialog(
             onDismissRequest = { showUrlDialog = false },
             title = { Text("配置 Antigravity 会话链接") },
             text = {
                 Column {
                     Text(
-                        "粘贴您的 Antigravity 网页会话链接（例如 https://antigravity.google.com/u/3/r/...）：",
+                        "粘贴您的 Antigravity 网页会话链接（例如 https://antigravity.google.com/u/1/r/...）：",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -620,7 +847,12 @@ fun WebRemoteScreen(
                             inputUrl
                         }.trim()
                         viewModel.updateWebRemoteUrl(formatted)
+                        viewModel.recordActiveUrl(formatted)
+                        loadedExternalUrl = formatted
                         webViewInstance?.loadUrl(formatted)
+                        try {
+                            CookieManager.getInstance().flush()
+                        } catch (_: Exception) {}
                         showUrlDialog = false
                     },
                     enabled = inputUrl.isNotBlank()

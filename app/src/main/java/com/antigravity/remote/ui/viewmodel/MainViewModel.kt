@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.antigravity.remote.data.local.SettingsDataStore
 import com.antigravity.remote.data.model.*
 import com.antigravity.remote.data.repository.AgentRepository
+import com.antigravity.remote.util.AccountUrlHelper
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -25,6 +26,15 @@ class MainViewModel @Inject constructor(
     )
     val webRemoteUrl = settingsDataStore.webRemoteUrl.stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5000), "https://antigravity.google.com"
+    )
+    val lastActiveUrl = settingsDataStore.lastActiveUrl.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5000), ""
+    )
+    val lastAccountIndex = settingsDataStore.lastAccountIndex.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5000), 0
+    )
+    val autoRestoreAccount = settingsDataStore.autoRestoreAccount.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5000), true
     )
     val authToken = settingsDataStore.authToken.stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5000), ""
@@ -86,17 +96,57 @@ class MainViewModel @Inject constructor(
         repository.stopSession(sessionId)
     }
 
+    fun recordActiveUrl(url: String) {
+        if (!AccountUrlHelper.isPersistableAppUrl(url)) return
+        val cleanUrl = url.trim()
+        viewModelScope.launch {
+            settingsDataStore.setLastActiveUrl(cleanUrl)
+            val detectedIndex = AccountUrlHelper.extractAccountIndex(cleanUrl)
+            if (detectedIndex != null) {
+                settingsDataStore.setLastAccountIndex(detectedIndex)
+            }
+        }
+    }
+
     fun updateServerUrl(url: String) {
         viewModelScope.launch {
             settingsDataStore.setServerUrl(url)
             if (url.contains("antigravity.google.com")) {
                 settingsDataStore.setWebRemoteUrl(url)
+                if (AccountUrlHelper.isPersistableAppUrl(url)) {
+                    settingsDataStore.setLastActiveUrl(url)
+                    val idx = AccountUrlHelper.extractAccountIndex(url)
+                    if (idx != null) {
+                        settingsDataStore.setLastAccountIndex(idx)
+                    }
+                }
             }
         }
     }
 
     fun updateWebRemoteUrl(url: String) {
-        viewModelScope.launch { settingsDataStore.setWebRemoteUrl(url) }
+        viewModelScope.launch {
+            settingsDataStore.setWebRemoteUrl(url)
+            if (AccountUrlHelper.isPersistableAppUrl(url)) {
+                settingsDataStore.setLastActiveUrl(url)
+                val idx = AccountUrlHelper.extractAccountIndex(url)
+                if (idx != null) {
+                    settingsDataStore.setLastAccountIndex(idx)
+                }
+            }
+        }
+    }
+
+    fun updateLastActiveUrl(url: String) {
+        viewModelScope.launch { settingsDataStore.setLastActiveUrl(url) }
+    }
+
+    fun updateLastAccountIndex(index: Int) {
+        viewModelScope.launch { settingsDataStore.setLastAccountIndex(index) }
+    }
+
+    fun updateAutoRestoreAccount(enabled: Boolean) {
+        viewModelScope.launch { settingsDataStore.setAutoRestoreAccount(enabled) }
     }
 
     fun updateAuthToken(token: String) {
