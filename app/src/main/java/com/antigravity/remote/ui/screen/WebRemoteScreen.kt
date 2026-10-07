@@ -1,12 +1,16 @@
 package com.antigravity.remote.ui.screen
 
 import android.annotation.SuppressLint
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.*
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -17,6 +21,8 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -30,14 +36,33 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.antigravity.remote.ui.viewmodel.MainViewModel
 import com.antigravity.remote.util.AccountUrlHelper
 import com.antigravity.remote.util.BlobDownloadInterface
 import com.antigravity.remote.util.DownloadHelper
+import com.antigravity.remote.util.WebLinkInterface
+import org.json.JSONArray
+
+data class LinkActionItem(
+    val url: String,
+    val text: String
+)
+
+data class TableLinkItem(
+    val url: String,
+    val text: String
+)
+
+data class TableLinksGroup(
+    val title: String,
+    val links: List<TableLinkItem>
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @SuppressLint("SetJavaScriptEnabled")
@@ -62,6 +87,8 @@ fun WebRemoteScreen(
     var showUrlDialog by remember { mutableStateOf(false) }
     var showAccountDialog by remember { mutableStateOf(false) }
     var showFabMenu by remember { mutableStateOf(false) }
+    var activeLinkAction by remember { mutableStateOf<LinkActionItem?>(null) }
+    var activeTableLinks by remember { mutableStateOf<TableLinksGroup?>(null) }
 
     var fileChooserCallback by remember { mutableStateOf<ValueCallback<Array<Uri>>?>(null) }
     val fileChooserLauncher = rememberLauncherForActivityResult(
@@ -218,6 +245,36 @@ fun WebRemoteScreen(
 
                         // Register Javascript Interface for blob: and data: file downloads
                         addJavascriptInterface(BlobDownloadInterface(context), "AndroidBlobDownloader")
+
+                        // Register Javascript Interface for link actions & table link operations
+                        addJavascriptInterface(
+                            WebLinkInterface(
+                                context = context,
+                                onShowLinkActions = { url, text ->
+                                    activeLinkAction = LinkActionItem(url = url, text = text)
+                                },
+                                onShowTableLinks = { title, jsonLinks ->
+                                    try {
+                                        val list = mutableListOf<TableLinkItem>()
+                                        val array = JSONArray(jsonLinks)
+                                        for (i in 0 until array.length()) {
+                                            val obj = array.getJSONObject(i)
+                                            val u = obj.optString("url", "")
+                                            val t = obj.optString("text", "")
+                                            if (u.isNotBlank()) {
+                                                list.add(TableLinkItem(url = u, text = t))
+                                            }
+                                        }
+                                        if (list.isNotEmpty()) {
+                                            activeTableLinks = TableLinksGroup(title = title, links = list)
+                                        }
+                                    } catch (e: Exception) {
+                                        android.util.Log.e("WebRemote", "Failed to parse table links", e)
+                                    }
+                                }
+                            ),
+                            "AndroidLinkHelper"
+                        )
 
                         // Register DownloadListener for standard HTTP/HTTPS downloads and fallback handling
                         setDownloadListener { url, userAgent, contentDisposition, mimetype, _ ->
@@ -408,6 +465,317 @@ fun WebRemoteScreen(
                                     """.trimIndent()
                                     view?.evaluateJavascript(jsInject, null)
                                 }
+
+                                // 3. Inject Table Link Enhancer & Link Long-Press Context Menu
+                                val jsLinkEnhancer = """
+                                    (function() {
+                                        if (window.__antigravityLinkEnhancerInjected) return;
+                                        window.__antigravityLinkEnhancerInjected = true;
+
+                                        var style = document.getElementById('antigravity-table-link-style');
+                                        if (!style) {
+                                            style = document.createElement('style');
+                                            style.id = 'antigravity-table-link-style';
+                                            style.textContent = `
+                                                .ag-table-toolbar {
+                                                    display: flex;
+                                                    align-items: center;
+                                                    justify-content: flex-end;
+                                                    gap: 6px;
+                                                    margin-bottom: 6px;
+                                                    padding: 2px 4px;
+                                                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                                                }
+                                                .ag-table-tool-btn {
+                                                    display: inline-flex;
+                                                    align-items: center;
+                                                    gap: 4px;
+                                                    font-size: 11px;
+                                                    line-height: 1;
+                                                    padding: 5px 9px;
+                                                    background: rgba(66, 133, 244, 0.16);
+                                                    color: #8ab4f8;
+                                                    border: 1px solid rgba(138, 180, 248, 0.35);
+                                                    border-radius: 12px;
+                                                    cursor: pointer;
+                                                    user-select: none;
+                                                    -webkit-user-select: none;
+                                                    touch-action: manipulation;
+                                                }
+                                                .ag-table-tool-btn:active {
+                                                    background: rgba(66, 133, 244, 0.38);
+                                                    transform: scale(0.97);
+                                                }
+                                                .ag-link-copy-btn {
+                                                    display: inline-flex;
+                                                    align-items: center;
+                                                    justify-content: center;
+                                                    margin-left: 5px;
+                                                    padding: 2px 7px;
+                                                    font-size: 11px;
+                                                    line-height: 1.2;
+                                                    background: rgba(255, 255, 255, 0.08);
+                                                    color: #8ab4f8;
+                                                    border: 1px solid rgba(138, 180, 248, 0.3);
+                                                    border-radius: 6px;
+                                                    cursor: pointer;
+                                                    user-select: none;
+                                                    -webkit-user-select: none;
+                                                    vertical-align: middle;
+                                                    white-space: nowrap;
+                                                    touch-action: manipulation;
+                                                }
+                                                .ag-link-copy-btn:active {
+                                                    background: rgba(66, 133, 244, 0.4);
+                                                    color: #ffffff;
+                                                }
+                                                .ag-link-copy-btn.copied {
+                                                    background: rgba(52, 168, 83, 0.35) !important;
+                                                    color: #81c995 !important;
+                                                    border-color: rgba(52, 168, 83, 0.6) !important;
+                                                }
+                                                table {
+                                                    -webkit-touch-callout: none !important;
+                                                }
+                                                table a {
+                                                    -webkit-touch-callout: none !important;
+                                                }
+                                            `;
+                                            document.head.appendChild(style);
+                                        }
+
+                                        function extractTableMarkdown(table) {
+                                            var rows = Array.from(table.querySelectorAll('tr'));
+                                            return rows.map(function(row) {
+                                                var cells = Array.from(row.querySelectorAll('th, td'));
+                                                return '| ' + cells.map(function(c) {
+                                                    var clone = c.cloneNode(true);
+                                                    clone.querySelectorAll('.ag-link-copy-btn').forEach(function(b) { b.remove(); });
+                                                    return clone.textContent.trim().replace(/\|/g, '\\|');
+                                                }).join(' | ') + ' |';
+                                            }).join('\n');
+                                        }
+
+                                        function linkifyCell(cell) {
+                                            if (!cell || cell.querySelector('a')) return;
+                                            var html = cell.innerHTML;
+                                            var urlPattern = /(https?:\/\/[^\s<>"']+)/g;
+                                            if (urlPattern.test(html)) {
+                                                cell.innerHTML = html.replace(urlPattern, function(u) {
+                                                    return '<a href="' + u + '" target="_blank">' + u + '</a>';
+                                                });
+                                            }
+                                        }
+
+                                        function processTable(table) {
+                                            if (!table) return;
+
+                                            var cells = table.querySelectorAll('td, th');
+                                            cells.forEach(function(cell) {
+                                                linkifyCell(cell);
+                                            });
+
+                                            var links = table.querySelectorAll('a[href]');
+                                            var validLinks = [];
+                                            links.forEach(function(a) {
+                                                var href = a.getAttribute('href') || a.href;
+                                                if (href && !href.startsWith('javascript:') && !href.startsWith('#')) {
+                                                    var fullUrl = a.href || href;
+                                                    validLinks.push({
+                                                        url: fullUrl,
+                                                        text: (a.textContent || fullUrl).trim()
+                                                    });
+
+                                                    if (!a.nextElementSibling || !a.nextElementSibling.classList.contains('ag-link-copy-btn')) {
+                                                        var btn = document.createElement('span');
+                                                        btn.className = 'ag-link-copy-btn';
+                                                        btn.setAttribute('role', 'button');
+                                                        btn.textContent = '📋 复制';
+                                                        btn.addEventListener('click', function(ev) {
+                                                            ev.preventDefault();
+                                                            ev.stopPropagation();
+                                                            if (window.AndroidLinkHelper) {
+                                                                window.AndroidLinkHelper.copyToClipboard(fullUrl, '已复制链接: ' + fullUrl);
+                                                            }
+                                                            btn.classList.add('copied');
+                                                            btn.textContent = '✓ 已复制';
+                                                            setTimeout(function() {
+                                                                btn.classList.remove('copied');
+                                                                btn.textContent = '📋 复制';
+                                                            }, 1500);
+                                                        });
+                                                        a.insertAdjacentElement('afterend', btn);
+                                                    }
+                                                }
+                                            });
+
+                                            if (validLinks.length > 0 && table.parentElement) {
+                                                var prev = table.previousElementSibling;
+                                                if (!prev || !prev.classList.contains('ag-table-toolbar')) {
+                                                    var toolbar = document.createElement('div');
+                                                    toolbar.className = 'ag-table-toolbar';
+
+                                                    var linksBtn = document.createElement('button');
+                                                    linksBtn.type = 'button';
+                                                    linksBtn.className = 'ag-table-tool-btn';
+                                                    linksBtn.textContent = '🔗 表格链接 (' + validLinks.length + ')';
+                                                    linksBtn.addEventListener('click', function(ev) {
+                                                        ev.preventDefault();
+                                                        ev.stopPropagation();
+                                                        var currentLinks = [];
+                                                        table.querySelectorAll('a[href]').forEach(function(l) {
+                                                            var h = l.getAttribute('href') || l.href;
+                                                            if (h && !h.startsWith('javascript:') && !h.startsWith('#')) {
+                                                                currentLinks.push({
+                                                                    url: l.href || h,
+                                                                    text: (l.textContent || h).trim()
+                                                                });
+                                                            }
+                                                        });
+                                                        if (window.AndroidLinkHelper) {
+                                                            window.AndroidLinkHelper.showTableLinks('表格链接', JSON.stringify(currentLinks));
+                                                        }
+                                                    });
+                                                    toolbar.appendChild(linksBtn);
+
+                                                    var copyTableBtn = document.createElement('button');
+                                                    copyTableBtn.type = 'button';
+                                                    copyTableBtn.className = 'ag-table-tool-btn';
+                                                    copyTableBtn.textContent = '📄 复制表格';
+                                                    copyTableBtn.addEventListener('click', function(ev) {
+                                                        ev.preventDefault();
+                                                        ev.stopPropagation();
+                                                        var md = extractTableMarkdown(table);
+                                                        if (window.AndroidLinkHelper) {
+                                                            window.AndroidLinkHelper.copyToClipboard(md, '已复制表格文本');
+                                                        }
+                                                    });
+                                                    toolbar.appendChild(copyTableBtn);
+
+                                                    table.parentElement.insertBefore(toolbar, table);
+                                                } else {
+                                                    var countBtn = prev.querySelector('.ag-table-tool-btn');
+                                                    if (countBtn) {
+                                                        countBtn.textContent = '🔗 表格链接 (' + validLinks.length + ')';
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        function scanAllTables() {
+                                            var tables = document.querySelectorAll('table');
+                                            tables.forEach(processTable);
+                                        }
+
+                                        scanAllTables();
+
+                                        var observer = new MutationObserver(function(mutations) {
+                                            var shouldScan = false;
+                                            for (var i = 0; i < mutations.length; i++) {
+                                                var m = mutations[i];
+                                                if (m.addedNodes && m.addedNodes.length > 0) {
+                                                    for (var j = 0; j < m.addedNodes.length; j++) {
+                                                        var node = m.addedNodes[j];
+                                                        if (node.nodeType === 1) {
+                                                            if (node.tagName === 'TABLE' || (node.querySelector && node.querySelector('table, a[href]'))) {
+                                                                shouldScan = true;
+                                                                break;
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                if (shouldScan) break;
+                                            }
+                                            if (shouldScan) {
+                                                scanAllTables();
+                                            }
+                                        });
+
+                                        observer.observe(document.body || document.documentElement, {
+                                            childList: true,
+                                            subtree: true
+                                        });
+
+                                        var longPressTimer = null;
+                                        var touchStartX = 0;
+                                        var touchStartY = 0;
+                                        var currentTouchLink = null;
+
+                                        document.addEventListener('touchstart', function(e) {
+                                            var target = e.target;
+                                            while (target && target.tagName !== 'A') {
+                                                if (target.classList && target.classList.contains('ag-link-copy-btn')) return;
+                                                target = target.parentElement;
+                                            }
+                                            if (target && target.tagName === 'A') {
+                                                var href = target.getAttribute('href') || target.href;
+                                                if (href && !href.startsWith('javascript:') && !href.startsWith('#')) {
+                                                    currentTouchLink = target;
+                                                    touchStartX = e.touches[0].clientX;
+                                                    touchStartY = e.touches[0].clientY;
+                                                    clearTimeout(longPressTimer);
+                                                    longPressTimer = setTimeout(function() {
+                                                        if (currentTouchLink === target) {
+                                                            if (window.getSelection) {
+                                                                window.getSelection().removeAllRanges();
+                                                            }
+                                                            var linkText = (target.textContent || '').trim();
+                                                            var finalUrl = target.href || href;
+                                                            if (window.AndroidLinkHelper) {
+                                                                window.AndroidLinkHelper.showLinkActions(finalUrl, linkText);
+                                                            }
+                                                            currentTouchLink = null;
+                                                        }
+                                                    }, 400);
+                                                }
+                                            }
+                                        }, { passive: true });
+
+                                        document.addEventListener('touchmove', function(e) {
+                                            if (currentTouchLink && e.touches[0]) {
+                                                var dx = Math.abs(e.touches[0].clientX - touchStartX);
+                                                var dy = Math.abs(e.touches[0].clientY - touchStartY);
+                                                if (dx > 10 || dy > 10) {
+                                                    clearTimeout(longPressTimer);
+                                                    currentTouchLink = null;
+                                                }
+                                            }
+                                        }, { passive: true });
+
+                                        document.addEventListener('touchend', function() {
+                                            clearTimeout(longPressTimer);
+                                            currentTouchLink = null;
+                                        }, { passive: true });
+
+                                        document.addEventListener('touchcancel', function() {
+                                            clearTimeout(longPressTimer);
+                                            currentTouchLink = null;
+                                        }, { passive: true });
+
+                                        document.addEventListener('contextmenu', function(e) {
+                                            var target = e.target;
+                                            while (target && target.tagName !== 'A') {
+                                                target = target.parentElement;
+                                            }
+                                            if (target && target.tagName === 'A') {
+                                                var href = target.getAttribute('href') || target.href;
+                                                if (href && !href.startsWith('javascript:') && !href.startsWith('#')) {
+                                                    e.preventDefault();
+                                                    e.stopPropagation();
+                                                    if (window.getSelection) {
+                                                        window.getSelection().removeAllRanges();
+                                                    }
+                                                    var linkText = (target.textContent || '').trim();
+                                                    var finalUrl = target.href || href;
+                                                    if (window.AndroidLinkHelper) {
+                                                        window.AndroidLinkHelper.showLinkActions(finalUrl, linkText);
+                                                    }
+                                                }
+                                            }
+                                        }, true);
+                                    })();
+                                """.trimIndent()
+                                view?.evaluateJavascript(jsLinkEnhancer, null)
                             }
 
                             override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
@@ -439,6 +807,26 @@ fun WebRemoteScreen(
                                         )
                                         return true
                                     }
+
+                                    // Check if link is external (not Antigravity and not Google login)
+                                    val targetHost = uri.host?.lowercase() ?: ""
+                                    val configuredHost = try {
+                                        Uri.parse(webRemoteUrl).host?.lowercase()
+                                    } catch (_: Exception) {
+                                        null
+                                    }
+
+                                    val isInternal = targetHost.contains("antigravity.google.com") ||
+                                            (configuredHost != null && targetHost == configuredHost) ||
+                                            targetHost.contains("accounts.google.") ||
+                                            targetHost.contains("gstatic.com") ||
+                                            targetHost.contains("googleusercontent.com")
+
+                                    if (!isInternal && webRemoteUrl.isNotBlank()) {
+                                        activeLinkAction = LinkActionItem(url = urlStr, text = "")
+                                        return true
+                                    }
+
                                     return false
                                 } else if (scheme != null && scheme != "about" && scheme != "data" && scheme != "blob" && scheme != "javascript") {
                                     return try {
@@ -473,7 +861,24 @@ fun WebRemoteScreen(
                                         override fun onPageStarted(v: WebView?, url: String?, favicon: Bitmap?) {
                                             super.onPageStarted(v, url, favicon)
                                             if (!url.isNullOrBlank() && url != "about:blank") {
-                                                view?.loadUrl(url)
+                                                val targetUri = try { Uri.parse(url) } catch (_: Exception) { null }
+                                                val targetHost = targetUri?.host?.lowercase() ?: ""
+                                                val configuredHost = try {
+                                                    Uri.parse(webRemoteUrl).host?.lowercase()
+                                                } catch (_: Exception) {
+                                                    null
+                                                }
+                                                val isInternal = targetHost.contains("antigravity.google.com") ||
+                                                        (configuredHost != null && targetHost == configuredHost) ||
+                                                        targetHost.contains("accounts.google.") ||
+                                                        targetHost.contains("gstatic.com") ||
+                                                        targetHost.contains("googleusercontent.com")
+
+                                                if (!isInternal && webRemoteUrl.isNotBlank()) {
+                                                    activeLinkAction = LinkActionItem(url = url, text = "")
+                                                } else {
+                                                    view?.loadUrl(url)
+                                                }
                                                 v?.stopLoading()
                                                 v?.destroy()
                                             }
@@ -488,7 +893,24 @@ fun WebRemoteScreen(
                                                     userAgent = settings.userAgentString
                                                 )
                                             } else {
-                                                view?.loadUrl(targetUrl)
+                                                val targetUri = req.url
+                                                val targetHost = targetUri?.host?.lowercase() ?: ""
+                                                val configuredHost = try {
+                                                    Uri.parse(webRemoteUrl).host?.lowercase()
+                                                } catch (_: Exception) {
+                                                    null
+                                                }
+                                                val isInternal = targetHost.contains("antigravity.google.com") ||
+                                                        (configuredHost != null && targetHost == configuredHost) ||
+                                                        targetHost.contains("accounts.google.") ||
+                                                        targetHost.contains("gstatic.com") ||
+                                                        targetHost.contains("googleusercontent.com")
+
+                                                if (!isInternal && webRemoteUrl.isNotBlank()) {
+                                                    activeLinkAction = LinkActionItem(url = targetUrl, text = "")
+                                                } else {
+                                                    view?.loadUrl(targetUrl)
+                                                }
                                             }
                                             v?.stopLoading()
                                             v?.destroy()
@@ -626,6 +1048,24 @@ fun WebRemoteScreen(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
                         Text("上一页", modifier = Modifier.weight(1f))
+                    }
+
+                    // 2.5 复制当前网址
+                    TextButton(
+                        onClick = {
+                            showFabMenu = false
+                            val current = webViewInstance?.url ?: lastActiveUrl.ifBlank { webRemoteUrl }
+                            if (current.isNotBlank()) {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                clipboard.setPrimaryClip(ClipData.newPlainText("Current URL", current))
+                                Toast.makeText(context, "已复制当前会话网址", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("复制当前网址", modifier = Modifier.weight(1f))
                     }
 
                     // 3. 切换多账号
@@ -894,6 +1334,264 @@ fun WebRemoteScreen(
             dismissButton = {
                 TextButton(onClick = { showUrlDialog = false }) {
                     Text("取消")
+                }
+            }
+        )
+    }
+
+    // Active Link Actions Dialog (Long-press or Click external link)
+    if (activeLinkAction != null) {
+        val link = activeLinkAction!!
+        AlertDialog(
+            onDismissRequest = { activeLinkAction = null },
+            icon = {
+                Icon(
+                    Icons.Filled.Link,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            },
+            title = {
+                Text("链接操作")
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    if (link.text.isNotBlank() && link.text != link.url) {
+                        Text(
+                            text = link.text,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = link.url,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(10.dp)
+                        )
+                    }
+
+                    Spacer(Modifier.height(4.dp))
+
+                    // Action 1: Copy Link Address
+                    Button(
+                        onClick = {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            clipboard.setPrimaryClip(ClipData.newPlainText("URL", link.url))
+                            Toast.makeText(context, "已复制链接地址", Toast.LENGTH_SHORT).show()
+                            activeLinkAction = null
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("复制链接地址")
+                    }
+
+                    // Action 2: Open in external browser
+                    OutlinedButton(
+                        onClick = {
+                            try {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(link.url)).apply {
+                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                }
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "无法打开浏览器: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
+                            activeLinkAction = null
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Filled.OpenInBrowser, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("在外部浏览器打开")
+                    }
+
+                    // Action 3: Copy link text (if present)
+                    if (link.text.isNotBlank() && link.text != link.url) {
+                        OutlinedButton(
+                            onClick = {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                clipboard.setPrimaryClip(ClipData.newPlainText("Link Text", link.text))
+                                Toast.makeText(context, "已复制文字内容", Toast.LENGTH_SHORT).show()
+                                activeLinkAction = null
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Filled.Description, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("复制链接文字")
+                        }
+                    }
+
+                    // Action 4: Download file (if downloadable)
+                    if (DownloadHelper.isDownloadableUrl(link.url)) {
+                        OutlinedButton(
+                            onClick = {
+                                DownloadHelper.downloadHttpUrl(
+                                    context = context,
+                                    url = link.url,
+                                    userAgent = webViewInstance?.settings?.userAgentString ?: ""
+                                )
+                                activeLinkAction = null
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Filled.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("下载该文件")
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { activeLinkAction = null }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+
+    // Active Table Links List Dialog
+    if (activeTableLinks != null) {
+        val tableData = activeTableLinks!!
+        AlertDialog(
+            onDismissRequest = { activeTableLinks = null },
+            icon = {
+                Icon(
+                    Icons.Filled.TableChart,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            },
+            title = {
+                Text("表格中的链接 (${tableData.links.size} 个)")
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp)
+                ) {
+                    Text(
+                        text = "点击即可一键复制或在外部浏览器中打开：",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(8.dp))
+
+                    LazyColumn(
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(tableData.links) { item ->
+                            Card(
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    if (item.text.isNotBlank() && item.text != item.url) {
+                                        Text(
+                                            text = item.text,
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Spacer(Modifier.height(2.dp))
+                                    }
+                                    Text(
+                                        text = item.url,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Spacer(Modifier.height(6.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        FilledTonalButton(
+                                            onClick = {
+                                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                                clipboard.setPrimaryClip(ClipData.newPlainText("URL", item.url))
+                                                Toast.makeText(context, "已复制链接", Toast.LENGTH_SHORT).show()
+                                            },
+                                            modifier = Modifier.weight(1f),
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                                        ) {
+                                            Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            Spacer(Modifier.width(4.dp))
+                                            Text("复制", style = MaterialTheme.typography.labelMedium)
+                                        }
+
+                                        OutlinedButton(
+                                            onClick = {
+                                                try {
+                                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(item.url)).apply {
+                                                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                                    }
+                                                    context.startActivity(intent)
+                                                } catch (e: Exception) {
+                                                    Toast.makeText(context, "无法打开: ${e.message}", Toast.LENGTH_SHORT).show()
+                                                }
+                                            },
+                                            modifier = Modifier.weight(1f),
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                                        ) {
+                                            Icon(Icons.Filled.OpenInBrowser, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            Spacer(Modifier.width(4.dp))
+                                            Text("打开", style = MaterialTheme.typography.labelMedium)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+
+                    // Copy all links button
+                    Button(
+                        onClick = {
+                            val allLinks = tableData.links.joinToString("\n") { it.url }
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            clipboard.setPrimaryClip(ClipData.newPlainText("All URLs", allLinks))
+                            Toast.makeText(context, "已复制全部 ${tableData.links.size} 个链接", Toast.LENGTH_SHORT).show()
+                            activeTableLinks = null
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("复制全部链接 (${tableData.links.size})")
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { activeTableLinks = null }) {
+                    Text("关闭")
                 }
             }
         )

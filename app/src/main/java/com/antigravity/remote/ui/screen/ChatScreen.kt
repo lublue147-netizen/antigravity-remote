@@ -6,6 +6,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Check
@@ -59,27 +60,31 @@ fun ChatScreen(viewModel: MainViewModel) {
             }
         )
         
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.weight(1f).padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+        SelectionContainer(
+            modifier = Modifier.weight(1f).padding(horizontal = 16.dp)
         ) {
-            items(sessionMessages) { msg ->
-                val isUser = msg.role == MessageRole.USER
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = if (isUser) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                        modifier = Modifier.widthIn(max = 300.dp)
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(sessionMessages) { msg ->
+                    val isUser = msg.role == MessageRole.USER
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
                     ) {
-                        Text(
-                            text = msg.content,
-                            color = if (isUser) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(12.dp)
-                        )
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isUser) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier.widthIn(max = 300.dp)
+                        ) {
+                            Text(
+                                text = msg.content,
+                                color = if (isUser) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(12.dp)
+                            )
+                        }
                     }
                 }
             }
