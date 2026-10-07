@@ -506,39 +506,79 @@ fun WebRemoteScreen(
                                                     background: rgba(66, 133, 244, 0.38);
                                                     transform: scale(0.97);
                                                 }
-                                                .ag-link-copy-btn {
+                                                .ag-link-actions {
+                                                    display: inline-flex;
+                                                    align-items: center;
+                                                    gap: 4px;
+                                                    margin-left: 6px;
+                                                    vertical-align: middle;
+                                                    white-space: nowrap;
+                                                }
+                                                .ag-btn-copy-text, .ag-btn-copy-url {
                                                     display: inline-flex;
                                                     align-items: center;
                                                     justify-content: center;
-                                                    margin-left: 5px;
-                                                    padding: 2px 7px;
+                                                    padding: 3px 7px;
                                                     font-size: 11px;
+                                                    font-family: system-ui, -apple-system, sans-serif;
                                                     line-height: 1.2;
-                                                    background: rgba(255, 255, 255, 0.08);
-                                                    color: #8ab4f8;
-                                                    border: 1px solid rgba(138, 180, 248, 0.3);
                                                     border-radius: 6px;
                                                     cursor: pointer;
                                                     user-select: none;
                                                     -webkit-user-select: none;
-                                                    vertical-align: middle;
-                                                    white-space: nowrap;
                                                     touch-action: manipulation;
+                                                    border: 1px solid rgba(138, 180, 248, 0.3);
                                                 }
-                                                .ag-link-copy-btn:active {
-                                                    background: rgba(66, 133, 244, 0.4);
-                                                    color: #ffffff;
+                                                .ag-btn-copy-text {
+                                                    background: rgba(255, 193, 7, 0.15);
+                                                    color: #ffd54f;
+                                                    border-color: rgba(255, 193, 7, 0.35);
                                                 }
-                                                .ag-link-copy-btn.copied {
+                                                .ag-btn-copy-text:active {
+                                                    background: rgba(255, 193, 7, 0.35);
+                                                }
+                                                .ag-btn-copy-url {
+                                                    background: rgba(66, 133, 244, 0.15);
+                                                    color: #8ab4f8;
+                                                    border-color: rgba(138, 180, 248, 0.35);
+                                                }
+                                                .ag-btn-copy-url:active {
+                                                    background: rgba(66, 133, 244, 0.35);
+                                                }
+                                                .ag-btn-copy-text.copied, .ag-btn-copy-url.copied {
                                                     background: rgba(52, 168, 83, 0.35) !important;
                                                     color: #81c995 !important;
                                                     border-color: rgba(52, 168, 83, 0.6) !important;
                                                 }
-                                                table {
-                                                    -webkit-touch-callout: none !important;
+                                                table td, table th {
+                                                    user-select: text;
+                                                    -webkit-user-select: text;
+                                                    user-select: contain;
+                                                    -webkit-user-select: contain;
+                                                    position: relative;
                                                 }
                                                 table a {
+                                                    -webkit-user-select: all !important;
+                                                    user-select: all !important;
                                                     -webkit-touch-callout: none !important;
+                                                    cursor: pointer;
+                                                }
+                                                .ag-selection-bubble {
+                                                    position: fixed;
+                                                    z-index: 2147483647;
+                                                    background: #1976d2;
+                                                    color: #ffffff;
+                                                    font-size: 12px;
+                                                    font-weight: bold;
+                                                    padding: 6px 14px;
+                                                    border-radius: 18px;
+                                                    box-shadow: 0 4px 14px rgba(0,0,0,0.5);
+                                                    cursor: pointer;
+                                                    user-select: none;
+                                                    -webkit-user-select: none;
+                                                    display: inline-flex;
+                                                    align-items: center;
+                                                    gap: 4px;
                                                 }
                                             `;
                                             document.head.appendChild(style);
@@ -550,7 +590,7 @@ fun WebRemoteScreen(
                                                 var cells = Array.from(row.querySelectorAll('th, td'));
                                                 return '| ' + cells.map(function(c) {
                                                     var clone = c.cloneNode(true);
-                                                    clone.querySelectorAll('.ag-link-copy-btn').forEach(function(b) { b.remove(); });
+                                                    clone.querySelectorAll('.ag-link-actions, .ag-table-toolbar').forEach(function(b) { b.remove(); });
                                                     return clone.textContent.trim().replace(/\|/g, '\\|');
                                                 }).join(' | ') + ' |';
                                             }).join('\n');
@@ -581,33 +621,94 @@ fun WebRemoteScreen(
                                                 var href = a.getAttribute('href') || a.href;
                                                 if (href && !href.startsWith('javascript:') && !href.startsWith('#')) {
                                                     var fullUrl = a.href || href;
+                                                    var textContent = (a.textContent || fullUrl).trim();
                                                     validLinks.push({
                                                         url: fullUrl,
-                                                        text: (a.textContent || fullUrl).trim()
+                                                        text: textContent
                                                     });
 
-                                                    if (!a.nextElementSibling || !a.nextElementSibling.classList.contains('ag-link-copy-btn')) {
-                                                        var btn = document.createElement('span');
-                                                        btn.className = 'ag-link-copy-btn';
-                                                        btn.setAttribute('role', 'button');
-                                                        btn.textContent = '📋 复制';
-                                                        btn.addEventListener('click', function(ev) {
+                                                    if (!a.dataset.agClickBound) {
+                                                        a.dataset.agClickBound = 'true';
+                                                        a.addEventListener('click', function(ev) {
+                                                            var h = a.getAttribute('href') || a.href;
+                                                            if (h && h.indexOf('/u/') === -1 && h.indexOf('authuser=') === -1) {
+                                                                ev.preventDefault();
+                                                                ev.stopPropagation();
+                                                                var t = (a.textContent || '').trim();
+                                                                var u = a.href || h;
+                                                                if (window.AndroidLinkHelper) {
+                                                                    window.AndroidLinkHelper.showLinkActions(u, t);
+                                                                }
+                                                            }
+                                                        });
+                                                    }
+
+                                                    if (!a.nextElementSibling || !a.nextElementSibling.classList.contains('ag-link-actions')) {
+                                                        var actionsWrap = document.createElement('span');
+                                                        actionsWrap.className = 'ag-link-actions';
+
+                                                        var copyTextBtn = document.createElement('span');
+                                                        copyTextBtn.className = 'ag-btn-copy-text';
+                                                        copyTextBtn.setAttribute('role', 'button');
+                                                        copyTextBtn.textContent = '📝 复制文字';
+                                                        copyTextBtn.addEventListener('click', function(ev) {
                                                             ev.preventDefault();
                                                             ev.stopPropagation();
+                                                            var curText = (a.textContent || '').trim();
                                                             if (window.AndroidLinkHelper) {
-                                                                window.AndroidLinkHelper.copyToClipboard(fullUrl, '已复制链接: ' + fullUrl);
+                                                                window.AndroidLinkHelper.copyToClipboard(curText, '已复制文字: ' + curText);
                                                             }
-                                                            btn.classList.add('copied');
-                                                            btn.textContent = '✓ 已复制';
+                                                            copyTextBtn.classList.add('copied');
+                                                            copyTextBtn.textContent = '✓ 已复制';
                                                             setTimeout(function() {
-                                                                btn.classList.remove('copied');
-                                                                btn.textContent = '📋 复制';
+                                                                copyTextBtn.classList.remove('copied');
+                                                                copyTextBtn.textContent = '📝 复制文字';
                                                             }, 1500);
                                                         });
-                                                        a.insertAdjacentElement('afterend', btn);
+                                                        actionsWrap.appendChild(copyTextBtn);
+
+                                                        var copyUrlBtn = document.createElement('span');
+                                                        copyUrlBtn.className = 'ag-btn-copy-url';
+                                                        copyUrlBtn.setAttribute('role', 'button');
+                                                        copyUrlBtn.textContent = '🔗 复制链接';
+                                                        copyUrlBtn.addEventListener('click', function(ev) {
+                                                            ev.preventDefault();
+                                                            ev.stopPropagation();
+                                                            var curUrl = a.href || href;
+                                                            if (window.AndroidLinkHelper) {
+                                                                window.AndroidLinkHelper.copyToClipboard(curUrl, '已复制链接: ' + curUrl);
+                                                            }
+                                                            copyUrlBtn.classList.add('copied');
+                                                            copyUrlBtn.textContent = '✓ 已复制';
+                                                            setTimeout(function() {
+                                                                copyUrlBtn.classList.remove('copied');
+                                                                copyUrlBtn.textContent = '🔗 复制链接';
+                                                            }, 1500);
+                                                        });
+                                                        actionsWrap.appendChild(copyUrlBtn);
+
+                                                        a.insertAdjacentElement('afterend', actionsWrap);
                                                     }
                                                 }
                                             });
+
+                                            if (!table.dataset.agDblClickBound) {
+                                                table.dataset.agDblClickBound = 'true';
+                                                table.addEventListener('dblclick', function(e) {
+                                                    var cell = e.target;
+                                                    while (cell && cell.tagName !== 'TD' && cell.tagName !== 'TH') {
+                                                        cell = cell.parentElement;
+                                                    }
+                                                    if (cell) {
+                                                        var clone = cell.cloneNode(true);
+                                                        clone.querySelectorAll('.ag-link-actions, .ag-table-toolbar').forEach(function(b) { b.remove(); });
+                                                        var cellText = clone.textContent.trim();
+                                                        if (cellText && window.AndroidLinkHelper) {
+                                                            window.AndroidLinkHelper.copyToClipboard(cellText, '已复制单元格文字: ' + cellText);
+                                                        }
+                                                    }
+                                                });
+                                            }
 
                                             if (validLinks.length > 0 && table.parentElement) {
                                                 var prev = table.previousElementSibling;
@@ -696,6 +797,58 @@ fun WebRemoteScreen(
                                             subtree: true
                                         });
 
+                                        var selBubble = null;
+                                        function removeSelBubble() {
+                                            if (selBubble && selBubble.parentElement) {
+                                                selBubble.remove();
+                                                selBubble = null;
+                                            }
+                                        }
+
+                                        document.addEventListener('touchend', function() {
+                                            setTimeout(function() {
+                                                var sel = window.getSelection();
+                                                if (!sel || sel.isCollapsed) {
+                                                    removeSelBubble();
+                                                    return;
+                                                }
+                                                var selectedText = sel.toString().trim();
+                                                if (!selectedText) {
+                                                    removeSelBubble();
+                                                    return;
+                                                }
+                                                removeSelBubble();
+                                                var range = sel.getRangeAt(0);
+                                                var rect = range.getBoundingClientRect();
+                                                if (rect.width === 0 && rect.height === 0) return;
+
+                                                selBubble = document.createElement('div');
+                                                selBubble.className = 'ag-selection-bubble';
+                                                selBubble.textContent = '📋 复制所选文字';
+                                                selBubble.style.left = Math.max(10, Math.min(window.innerWidth - 150, rect.left + rect.width / 2 - 60)) + 'px';
+                                                selBubble.style.top = Math.max(10, rect.top - 42) + 'px';
+
+                                                selBubble.addEventListener('click', function(ev) {
+                                                    ev.preventDefault();
+                                                    ev.stopPropagation();
+                                                    if (window.AndroidLinkHelper) {
+                                                        window.AndroidLinkHelper.copyToClipboard(selectedText, '已复制所选文字');
+                                                    }
+                                                    sel.removeAllRanges();
+                                                    removeSelBubble();
+                                                });
+
+                                                document.body.appendChild(selBubble);
+                                            }, 200);
+                                        });
+
+                                        document.addEventListener('selectionchange', function() {
+                                            var sel = window.getSelection();
+                                            if (!sel || sel.isCollapsed) {
+                                                removeSelBubble();
+                                            }
+                                        });
+
                                         var longPressTimer = null;
                                         var touchStartX = 0;
                                         var touchStartY = 0;
@@ -704,7 +857,7 @@ fun WebRemoteScreen(
                                         document.addEventListener('touchstart', function(e) {
                                             var target = e.target;
                                             while (target && target.tagName !== 'A') {
-                                                if (target.classList && target.classList.contains('ag-link-copy-btn')) return;
+                                                if (target.classList && (target.classList.contains('ag-btn-copy-text') || target.classList.contains('ag-btn-copy-url'))) return;
                                                 target = target.parentElement;
                                             }
                                             if (target && target.tagName === 'A') {
@@ -1359,34 +1512,69 @@ fun WebRemoteScreen(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    if (link.text.isNotBlank() && link.text != link.url) {
-                        Text(
-                            text = link.text,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
+                    // 1. Text Card & Copy Text Button
+                    if (link.text.isNotBlank()) {
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Text(
+                                    text = "文字内容 (Link Text):",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    text = link.text,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            }
+                        }
+
+                        Button(
+                            onClick = {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                clipboard.setPrimaryClip(ClipData.newPlainText("Link Text", link.text))
+                                Toast.makeText(context, "已复制文字内容", Toast.LENGTH_SHORT).show()
+                                activeLinkAction = null
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Filled.Description, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("复制链接文字")
+                        }
                     }
 
+                    // 2. URL Card & Copy URL Button
                     Card(
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.surfaceVariant
                         ),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text(
-                            text = link.url,
-                            style = MaterialTheme.typography.bodySmall,
-                            fontFamily = FontFamily.Monospace,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(10.dp)
-                        )
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text(
+                                text = "目标网址 (URL):",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = link.url,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
 
-                    Spacer(Modifier.height(4.dp))
-
-                    // Action 1: Copy Link Address
-                    Button(
+                    FilledTonalButton(
                         onClick = {
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                             clipboard.setPrimaryClip(ClipData.newPlainText("URL", link.url))
@@ -1400,7 +1588,25 @@ fun WebRemoteScreen(
                         Text("复制链接地址")
                     }
 
-                    // Action 2: Open in external browser
+                    // 3. Copy both text and URL if text is available
+                    if (link.text.isNotBlank() && link.text != link.url) {
+                        OutlinedButton(
+                            onClick = {
+                                val combined = "${link.text}\n${link.url}"
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                clipboard.setPrimaryClip(ClipData.newPlainText("Text and URL", combined))
+                                Toast.makeText(context, "已复制文字及网址", Toast.LENGTH_SHORT).show()
+                                activeLinkAction = null
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Filled.CopyAll, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("复制文字与网址")
+                        }
+                    }
+
+                    // 4. Open in external browser
                     OutlinedButton(
                         onClick = {
                             try {
@@ -1420,24 +1626,7 @@ fun WebRemoteScreen(
                         Text("在外部浏览器打开")
                     }
 
-                    // Action 3: Copy link text (if present)
-                    if (link.text.isNotBlank() && link.text != link.url) {
-                        OutlinedButton(
-                            onClick = {
-                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                clipboard.setPrimaryClip(ClipData.newPlainText("Link Text", link.text))
-                                Toast.makeText(context, "已复制文字内容", Toast.LENGTH_SHORT).show()
-                                activeLinkAction = null
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Filled.Description, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("复制链接文字")
-                        }
-                    }
-
-                    // Action 4: Download file (if downloadable)
+                    // 5. Download file (if downloadable)
                     if (DownloadHelper.isDownloadableUrl(link.url)) {
                         OutlinedButton(
                             onClick = {
@@ -1485,10 +1674,10 @@ fun WebRemoteScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 420.dp)
+                        .heightIn(max = 440.dp)
                 ) {
                     Text(
-                        text = "点击即可一键复制或在外部浏览器中打开：",
+                        text = "单指轻触即可快速复制文字或链接：",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1526,11 +1715,27 @@ fun WebRemoteScreen(
                                         maxLines = 2,
                                         overflow = TextOverflow.Ellipsis
                                     )
-                                    Spacer(Modifier.height(6.dp))
+                                    Spacer(Modifier.height(8.dp))
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                                     ) {
+                                        if (item.text.isNotBlank()) {
+                                            FilledTonalButton(
+                                                onClick = {
+                                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                                    clipboard.setPrimaryClip(ClipData.newPlainText("Text", item.text))
+                                                    Toast.makeText(context, "已复制文字: ${item.text}", Toast.LENGTH_SHORT).show()
+                                                },
+                                                modifier = Modifier.weight(1f),
+                                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
+                                            ) {
+                                                Icon(Icons.Filled.Description, contentDescription = null, modifier = Modifier.size(15.dp))
+                                                Spacer(Modifier.width(4.dp))
+                                                Text("复制文字", style = MaterialTheme.typography.labelSmall)
+                                            }
+                                        }
+
                                         FilledTonalButton(
                                             onClick = {
                                                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -1538,11 +1743,11 @@ fun WebRemoteScreen(
                                                 Toast.makeText(context, "已复制链接", Toast.LENGTH_SHORT).show()
                                             },
                                             modifier = Modifier.weight(1f),
-                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
                                         ) {
-                                            Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(15.dp))
                                             Spacer(Modifier.width(4.dp))
-                                            Text("复制", style = MaterialTheme.typography.labelMedium)
+                                            Text("复制链接", style = MaterialTheme.typography.labelSmall)
                                         }
 
                                         OutlinedButton(
@@ -1556,12 +1761,9 @@ fun WebRemoteScreen(
                                                     Toast.makeText(context, "无法打开: ${e.message}", Toast.LENGTH_SHORT).show()
                                                 }
                                             },
-                                            modifier = Modifier.weight(1f),
                                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                                         ) {
-                                            Icon(Icons.Filled.OpenInBrowser, contentDescription = null, modifier = Modifier.size(16.dp))
-                                            Spacer(Modifier.width(4.dp))
-                                            Text("打开", style = MaterialTheme.typography.labelMedium)
+                                            Icon(Icons.Filled.OpenInBrowser, contentDescription = null, modifier = Modifier.size(15.dp))
                                         }
                                     }
                                 }
@@ -1571,20 +1773,40 @@ fun WebRemoteScreen(
 
                     Spacer(Modifier.height(10.dp))
 
-                    // Copy all links button
-                    Button(
-                        onClick = {
-                            val allLinks = tableData.links.joinToString("\n") { it.url }
-                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            clipboard.setPrimaryClip(ClipData.newPlainText("All URLs", allLinks))
-                            Toast.makeText(context, "已复制全部 ${tableData.links.size} 个链接", Toast.LENGTH_SHORT).show()
-                            activeTableLinks = null
-                        },
-                        modifier = Modifier.fillMaxWidth()
+                    // Bottom actions: Copy all texts & Copy all links
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("复制全部链接 (${tableData.links.size})")
+                        Button(
+                            onClick = {
+                                val allTexts = tableData.links.map { it.text.ifBlank { it.url } }.joinToString("\n")
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                clipboard.setPrimaryClip(ClipData.newPlainText("All Texts", allTexts))
+                                Toast.makeText(context, "已复制全部文字", Toast.LENGTH_SHORT).show()
+                                activeTableLinks = null
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Filled.Description, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("复制全部文字")
+                        }
+
+                        Button(
+                            onClick = {
+                                val allLinks = tableData.links.joinToString("\n") { it.url }
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                clipboard.setPrimaryClip(ClipData.newPlainText("All URLs", allLinks))
+                                Toast.makeText(context, "已复制全部链接", Toast.LENGTH_SHORT).show()
+                                activeTableLinks = null
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("复制全部链接")
+                        }
                     }
                 }
             },

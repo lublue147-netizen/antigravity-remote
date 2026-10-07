@@ -2,7 +2,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Platform-Android-3DDC84?style=for-the-badge&logo=android&logoColor=white" />
-  <img src="https://img.shields.io/badge/Version-v1.0.9-blue?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Version-v1.0.10-blue?style=for-the-badge" />
   <img src="https://img.shields.io/badge/Language-Kotlin-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white" />
   <img src="https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4?style=for-the-badge&logo=jetpackcompose&logoColor=white" />
   <img src="https://img.shields.io/badge/Min%20SDK-26-brightgreen?style=for-the-badge" />
@@ -10,8 +10,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/lublue147-netizen/antigravity-remote/releases/download/v1.0.9/app-release.apk">
-    <img src="https://img.shields.io/badge/📥%20下载-最新%20v1.0.9%20Release%20APK-1A73E8?style=for-the-badge&logo=android&logoColor=white" />
+  <a href="https://github.com/lublue147-netizen/antigravity-remote/releases/download/v1.0.10/app-release.apk">
+    <img src="https://img.shields.io/badge/📥%20下载-最新%20v1.0.10%20Release%20APK-1A73E8?style=for-the-badge&logo=android&logoColor=white" />
   </a>
 </p>
 
@@ -24,10 +24,14 @@ A native and containerized Android client for remotely controlling **Google Anti
 ## 🌟 核心特性 (Features)
 
 ### 1. 🌐 官方网页版全屏沉浸容器 (Web Remote Container)
-- **表格链接便捷复制与防全选优化 (v1.0.9 重磅)**：
-  - **表格单元格一键复制按钮**：在 AI 输出的 Markdown 表格各单元格链接旁自动附加小巧精致的「📋 复制」快捷按钮，单指点击立即将链接精确复制至系统剪贴板，彻底告别在窄列手机屏幕上划词选中文本的繁琐痛点。
-  - **表格链接智能提取栏**：针对包含多个链接的表格，自动在表头注入「🔗 表格链接 (N)」快捷工具栏与「📄 复制表格」按钮，点击一键展开所有提取出的链接列表，支持单独复制、外部浏览器打开以及「一键复制全部链接」。
-  - **全链路防长按全选扩散 (Anti-Runaway Table Selection)**：深度优化移动端 WebView 表格触摸选择行为，拦截链接长按事件并弹出原生操作面板（复制链接、在外部浏览器打开、复制文字、文件下载），彻底解决以往在手机上长按链接导致一下子误选整个表格的问题！
+- **链接文字与网址独立提取，防范围选区扩散优化 (v1.0.10 重磅)**：
+  - **表格单元格独立双按钮**：在表格单元格各链接旁独立注入「📝 复制文字」与「🔗 复制链接」快捷操作胶囊，单指轻触即可精确提取链接文字或真实网址，提供清晰震动反馈与 Toast 提示。
+  - **原子化文本隔离保护 (Atomic Selection Containment)**：针对表格应用 `user-select: contain` 与 `table a { user-select: all !important }` 样式隔离，拖动选择光标时严格限制在链接内部，彻底杜绝手机上拖动时光标溢出扩散选择大段外部表格内容的顽疾。
+  - **表格单元格双击极速提取**：双击任意表格单元格即可直接提取该单元格所有纯文本，完全无需手动拖拽选择手柄。
+  - **全局划词浮动复制胶囊 (Floating Selection Bubble)**：页面任意位置划选文字时，自动在选区上方悬浮「📋 复制所选文字」微型气泡，点按即拷。
+  - **原生操作弹窗全面升级**：
+    - 点击链接或长按时弹出大号文字卡片，优先提供「复制链接文字」、「复制链接地址」、「复制文字与网址」及「外部浏览器打开」；
+    - 表格链接提取栏为每条链接独立配备「复制文字」与「复制链接」按钮，并支持底部「一键复制全部文字」和「一键复制全部链接」。
   - **外部链接安全保护**：点击消息/表格中的外部链接（如 GitHub、文档等）不再冲掉 Antigravity 会话容器，而是弹出便捷操作选项或唤起手机外部浏览器，保障对话上下文安全无损。
   - **悬浮菜单一键复制当前网址**：半透明快捷悬浮球新增「复制当前网址」功能，方便随时提取并分享正在运行的远程会话链接。
 - **多账号自动选择与冷启动零重置 (v1.0.8 深度强化)**：
@@ -66,8 +70,8 @@ A native and containerized Android client for remotely controlling **Google Anti
 
 | 版本 | 文件类型 | 说明 | 下载直链 |
 | :--- | :--- | :--- | :--- |
-| **v1.0.9** | **Release (正式版)** | 推荐使用，彻底解决表格链接难以复制、长按选中整个表格的问题，支持单元格一键复制与表格链接提取，签名兼容 | [下载 app-release.apk](https://github.com/lublue147-netizen/antigravity-remote/releases/download/v1.0.9/app-release.apk) |
-| **v1.0.9** | **Debug (调试版)** | 包含调试日志输出 | [下载 app-debug.apk](https://github.com/lublue147-netizen/antigravity-remote/releases/download/v1.0.9/app-debug.apk) |
+| **v1.0.10** | **Release (正式版)** | 推荐使用，提供链接文字/网址独立复制、原子化文本隔离、全局划词悬浮复制与双击提取，签名兼容 | [下载 app-release.apk](https://github.com/lublue147-netizen/antigravity-remote/releases/download/v1.0.10/app-release.apk) |
+| **v1.0.10** | **Debug (调试版)** | 包含调试日志输出 | [下载 app-debug.apk](https://github.com/lublue147-netizen/antigravity-remote/releases/download/v1.0.10/app-debug.apk) |
 
 ---
 
