@@ -2,7 +2,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Platform-Android-3DDC84?style=for-the-badge&logo=android&logoColor=white" />
-  <img src="https://img.shields.io/badge/Version-v1.0.10-blue?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Version-v1.0.11-blue?style=for-the-badge" />
   <img src="https://img.shields.io/badge/Language-Kotlin-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white" />
   <img src="https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4?style=for-the-badge&logo=jetpackcompose&logoColor=white" />
   <img src="https://img.shields.io/badge/Min%20SDK-26-brightgreen?style=for-the-badge" />
@@ -10,8 +10,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/lublue147-netizen/antigravity-remote/releases/download/v1.0.10/app-release.apk">
-    <img src="https://img.shields.io/badge/📥%20下载-最新%20v1.0.10%20Release%20APK-1A73E8?style=for-the-badge&logo=android&logoColor=white" />
+  <a href="https://github.com/lublue147-netizen/antigravity-remote/releases/download/v1.0.11/app-release.apk">
+    <img src="https://img.shields.io/badge/📥%20下载-最新%20v1.0.11%20Release%20APK-1A73E8?style=for-the-badge&logo=android&logoColor=white" />
   </a>
 </p>
 
@@ -24,7 +24,13 @@ A native and containerized Android client for remotely controlling **Google Anti
 ## 🌟 核心特性 (Features)
 
 ### 1. 🌐 官方网页版全屏沉浸容器 (Web Remote Container)
-- **链接文字与网址独立提取，防范围选区扩散优化 (v1.0.10 重磅)**：
+- **全面发热与续航功耗优化 (v1.0.11 重磅)**：
+  - **MutationObserver 节流防抖与递归自变动过滤**：为 DOM 监听器增加 350ms 防抖节流，内部变动打标隔离，跳过自身插入的工具栏/按钮节点，彻底根除高频流式输出与连续 DOM 变动引发的强制重排（Forced Reflow）与 CPU 满载发烫。
+  - **单元格状态标记跳过 (Cell Caching)**：为已处理的单元格添加 `data-ag-linkified` 缓存标记，增量式扫描未处理单元格，大幅缩短单次扫描耗时。
+  - **全生命周期休眠机制 (Lifecycle Timers Control)**：深度集成 `LifecycleEventObserver`，当 App 退至后台、锁屏或切换至其他标签页时，自动触发 `webView.onPause()` 与 `webView.pauseTimers()` 彻底冻结 JS 定时器、动画与后台渲染；回到前台自动恢复，杜绝后台空转耗电。
+  - **移除多余 GPU 离屏渲染层**：移除 WebView 显式 `LAYER_TYPE_HARDWARE` 配置，利用系统默认硬件加速，消除整屏离屏缓冲双重绘制，显著降低 GPU 显存带宽与发热。
+  - **URL 持久化内存去重 (I/O Deduplication)**：ViewModel 层拦截相同 URL 的重复写入，避免频繁 SPA 路由跳转引发无谓的 DataStore 磁盘 I/O 与 Compose 界面多余重组。
+- **链接文字与网址独立提取，防范围选区扩散优化 (v1.0.10)**：
   - **表格单元格独立双按钮**：在表格单元格各链接旁独立注入「📝 复制文字」与「🔗 复制链接」快捷操作胶囊，单指轻触即可精确提取链接文字或真实网址，提供清晰震动反馈与 Toast 提示。
   - **原子化文本隔离保护 (Atomic Selection Containment)**：针对表格应用 `user-select: contain` 与 `table a { user-select: all !important }` 样式隔离，拖动选择光标时严格限制在链接内部，彻底杜绝手机上拖动时光标溢出扩散选择大段外部表格内容的顽疾。
   - **表格单元格双击极速提取**：双击任意表格单元格即可直接提取该单元格所有纯文本，完全无需手动拖拽选择手柄。
@@ -70,8 +76,8 @@ A native and containerized Android client for remotely controlling **Google Anti
 
 | 版本 | 文件类型 | 说明 | 下载直链 |
 | :--- | :--- | :--- | :--- |
-| **v1.0.10** | **Release (正式版)** | 推荐使用，提供链接文字/网址独立复制、原子化文本隔离、全局划词悬浮复制与双击提取，签名兼容 | [下载 app-release.apk](https://github.com/lublue147-netizen/antigravity-remote/releases/download/v1.0.10/app-release.apk) |
-| **v1.0.10** | **Debug (调试版)** | 包含调试日志输出 | [下载 app-debug.apk](https://github.com/lublue147-netizen/antigravity-remote/releases/download/v1.0.10/app-debug.apk) |
+| **v1.0.11** | **Release (正式版)** | 推荐使用，深度发热与功耗续航优化、JS 节流防抖、全生命周期休眠与去重、签名兼容 | [下载 app-release.apk](https://github.com/lublue147-netizen/antigravity-remote/releases/download/v1.0.11/app-release.apk) |
+| **v1.0.11** | **Debug (调试版)** | 包含调试日志输出 | [下载 app-debug.apk](https://github.com/lublue147-netizen/antigravity-remote/releases/download/v1.0.11/app-debug.apk) |
 
 ---
 

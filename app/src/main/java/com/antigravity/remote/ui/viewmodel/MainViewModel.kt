@@ -110,14 +110,17 @@ class MainViewModel @Inject constructor(
     fun recordActiveUrl(url: String) {
         if (!AccountUrlHelper.isPersistableAppUrl(url)) return
         val cleanUrl = url.trim()
+        if (cleanUrl == lastActiveUrl.value) return
         viewModelScope.launch {
             settingsDataStore.setLastActiveUrl(cleanUrl)
             val detectedIndex = AccountUrlHelper.extractAccountIndex(cleanUrl)
-            if (detectedIndex != null) {
+            if (detectedIndex != null && detectedIndex != lastAccountIndex.value) {
                 settingsDataStore.setLastAccountIndex(detectedIndex)
             }
-            // Keep webRemoteUrl synchronized with active account URL
-            settingsDataStore.setWebRemoteUrl(cleanUrl)
+            if (cleanUrl != webRemoteUrl.value) {
+                // Keep webRemoteUrl synchronized with active account URL
+                settingsDataStore.setWebRemoteUrl(cleanUrl)
+            }
         }
     }
 

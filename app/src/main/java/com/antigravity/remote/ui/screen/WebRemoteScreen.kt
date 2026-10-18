@@ -42,6 +42,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.antigravity.remote.ui.viewmodel.MainViewModel
 import com.antigravity.remote.util.AccountUrlHelper
 import com.antigravity.remote.util.BlobDownloadInterface
@@ -118,9 +121,25 @@ fun WebRemoteScreen(
         }
     }
 
-    // Record last URL and flush CookieManager when screen is disposed
-    DisposableEffect(Unit) {
+    // Observe Activity / Screen lifecycle to pause timers & rendering when in background or navigating away
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_PAUSE -> {
+                    webViewInstance?.onPause()
+                    webViewInstance?.pauseTimers()
+                }
+                Lifecycle.Event.ON_RESUME -> {
+                    webViewInstance?.onResume()
+                    webViewInstance?.resumeTimers()
+                }
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
             webViewInstance?.url?.let { currentUrl ->
                 if (AccountUrlHelper.isPersistableAppUrl(currentUrl)) {
                     viewModel.recordActiveUrl(currentUrl)
@@ -129,6 +148,9 @@ fun WebRemoteScreen(
             try {
                 CookieManager.getInstance().flush()
             } catch (_: Exception) {}
+            // Pause WebView background tasks and JS timers when navigating away
+            webViewInstance?.onPause()
+            webViewInstance?.pauseTimers()
         }
     }
 
@@ -210,7 +232,9 @@ fun WebRemoteScreen(
                         )
 
                         setBackgroundColor(0xFF121212.toInt())
-                        setLayerType(View.LAYER_TYPE_HARDWARE, null)
+                        setLayerType(View.LAYER_TYPE_NONE, null)
+                        resumeTimers()
+                        onResume()
                         isFocusable = true
                         isFocusableInTouchMode = true
 
@@ -597,7 +621,9 @@ fun WebRemoteScreen(
                                         }
 
                                         function linkifyCell(cell) {
-                                            if (!cell || cell.querySelector('a')) return;
+                                            if (!cell || cell.dataset.agLinkified) return;
+                                            cell.dataset.agLinkified = 'true';
+                                            if (cell.querySelector('a')) return;
                                             var html = cell.innerHTML;
                                             var urlPattern = /(https?:\/\/[^\s<>"']+)/g;
                                             if (urlPattern.test(html)) {
@@ -610,87 +636,88 @@ fun WebRemoteScreen(
                                         function processTable(table) {
                                             if (!table) return;
 
-                                            var cells = table.querySelectorAll('td, th');
-                                            cells.forEach(function(cell) {
-                                                linkifyCell(cell);
-                                            });
+                                            var unlinkedCells = table.querySelectorAll('td:not([data-ag-linkified]), th:not([data-ag-linkified])');
+                                            for (var ci = 0; ci < unlinkedCells.length; ci++) {
+                                                linkifyCell(unlinkedCells[ci]);
+                                            }
 
-                                            var links = table.querySelectorAll('a[href]');
+                                            var allLinks = table.querySelectorAll('a[href]');
                                             var validLinks = [];
-                                            links.forEach(function(a) {
+                                            for (var li = 0; li < allLinks.length; li++) {
+                                                var a = allLinks[li];
                                                 var href = a.getAttribute('href') || a.href;
-                                                if (href && !href.startsWith('javascript:') && !href.startsWith('#')) {
-                                                    var fullUrl = a.href || href;
-                                                    var textContent = (a.textContent || fullUrl).trim();
-                                                    validLinks.push({
-                                                        url: fullUrl,
-                                                        text: textContent
+                                                if (!href || href.startsWith('javascript:') || href.startsWith('#')) continue;
+
+                                                var fullUrl = a.href || href;
+                                                var textContent = (a.textContent || fullUrl).trim();
+                                                validLinks.push({
+                                                    url: fullUrl,
+                                                    text: textContent
+                                                });
+
+                                                if (!a.dataset.agClickBound) {
+                                                    a.dataset.agClickBound = 'true';
+                                                    a.addEventListener('click', function(ev) {
+                                                        var h = a.getAttribute('href') || a.href;
+                                                        if (h && h.indexOf('/u/') === -1 && h.indexOf('authuser=') === -1) {
+                                                            ev.preventDefault();
+                                                            ev.stopPropagation();
+                                                            var t = (a.textContent || '').trim();
+                                                            var u = a.href || h;
+                                                            if (window.AndroidLinkHelper) {
+                                                                window.AndroidLinkHelper.showLinkActions(u, t);
+                                                            }
+                                                        }
                                                     });
-
-                                                    if (!a.dataset.agClickBound) {
-                                                        a.dataset.agClickBound = 'true';
-                                                        a.addEventListener('click', function(ev) {
-                                                            var h = a.getAttribute('href') || a.href;
-                                                            if (h && h.indexOf('/u/') === -1 && h.indexOf('authuser=') === -1) {
-                                                                ev.preventDefault();
-                                                                ev.stopPropagation();
-                                                                var t = (a.textContent || '').trim();
-                                                                var u = a.href || h;
-                                                                if (window.AndroidLinkHelper) {
-                                                                    window.AndroidLinkHelper.showLinkActions(u, t);
-                                                                }
-                                                            }
-                                                        });
-                                                    }
-
-                                                    if (!a.nextElementSibling || !a.nextElementSibling.classList.contains('ag-link-actions')) {
-                                                        var actionsWrap = document.createElement('span');
-                                                        actionsWrap.className = 'ag-link-actions';
-
-                                                        var copyTextBtn = document.createElement('span');
-                                                        copyTextBtn.className = 'ag-btn-copy-text';
-                                                        copyTextBtn.setAttribute('role', 'button');
-                                                        copyTextBtn.textContent = '📝 复制文字';
-                                                        copyTextBtn.addEventListener('click', function(ev) {
-                                                            ev.preventDefault();
-                                                            ev.stopPropagation();
-                                                            var curText = (a.textContent || '').trim();
-                                                            if (window.AndroidLinkHelper) {
-                                                                window.AndroidLinkHelper.copyToClipboard(curText, '已复制文字: ' + curText);
-                                                            }
-                                                            copyTextBtn.classList.add('copied');
-                                                            copyTextBtn.textContent = '✓ 已复制';
-                                                            setTimeout(function() {
-                                                                copyTextBtn.classList.remove('copied');
-                                                                copyTextBtn.textContent = '📝 复制文字';
-                                                            }, 1500);
-                                                        });
-                                                        actionsWrap.appendChild(copyTextBtn);
-
-                                                        var copyUrlBtn = document.createElement('span');
-                                                        copyUrlBtn.className = 'ag-btn-copy-url';
-                                                        copyUrlBtn.setAttribute('role', 'button');
-                                                        copyUrlBtn.textContent = '🔗 复制链接';
-                                                        copyUrlBtn.addEventListener('click', function(ev) {
-                                                            ev.preventDefault();
-                                                            ev.stopPropagation();
-                                                            var curUrl = a.href || href;
-                                                            if (window.AndroidLinkHelper) {
-                                                                window.AndroidLinkHelper.copyToClipboard(curUrl, '已复制链接: ' + curUrl);
-                                                            }
-                                                            copyUrlBtn.classList.add('copied');
-                                                            copyUrlBtn.textContent = '✓ 已复制';
-                                                            setTimeout(function() {
-                                                                copyUrlBtn.classList.remove('copied');
-                                                                copyUrlBtn.textContent = '🔗 复制链接';
-                                                            }, 1500);
-                                                        });
-                                                        actionsWrap.appendChild(copyUrlBtn);
-
-                                                        a.insertAdjacentElement('afterend', actionsWrap);
-                                                    }
                                                 }
-                                            });
+
+                                                if (!a.nextElementSibling || !a.nextElementSibling.classList.contains('ag-link-actions')) {
+                                                    var actionsWrap = document.createElement('span');
+                                                    actionsWrap.className = 'ag-link-actions';
+
+                                                    var copyTextBtn = document.createElement('span');
+                                                    copyTextBtn.className = 'ag-btn-copy-text';
+                                                    copyTextBtn.setAttribute('role', 'button');
+                                                    copyTextBtn.textContent = '📝 复制文字';
+                                                    copyTextBtn.addEventListener('click', function(ev) {
+                                                        ev.preventDefault();
+                                                        ev.stopPropagation();
+                                                        var curText = (a.textContent || '').trim();
+                                                        if (window.AndroidLinkHelper) {
+                                                            window.AndroidLinkHelper.copyToClipboard(curText, '已复制文字: ' + curText);
+                                                        }
+                                                        copyTextBtn.classList.add('copied');
+                                                        copyTextBtn.textContent = '✓ 已复制';
+                                                        setTimeout(function() {
+                                                            copyTextBtn.classList.remove('copied');
+                                                            copyTextBtn.textContent = '📝 复制文字';
+                                                        }, 1500);
+                                                    });
+                                                    actionsWrap.appendChild(copyTextBtn);
+
+                                                    var copyUrlBtn = document.createElement('span');
+                                                    copyUrlBtn.className = 'ag-btn-copy-url';
+                                                    copyUrlBtn.setAttribute('role', 'button');
+                                                    copyUrlBtn.textContent = '🔗 复制链接';
+                                                    copyUrlBtn.addEventListener('click', function(ev) {
+                                                        ev.preventDefault();
+                                                        ev.stopPropagation();
+                                                        var curUrl = a.href || href;
+                                                        if (window.AndroidLinkHelper) {
+                                                            window.AndroidLinkHelper.copyToClipboard(curUrl, '已复制链接: ' + curUrl);
+                                                        }
+                                                        copyUrlBtn.classList.add('copied');
+                                                        copyUrlBtn.textContent = '✓ 已复制';
+                                                        setTimeout(function() {
+                                                            copyUrlBtn.classList.remove('copied');
+                                                            copyUrlBtn.textContent = '🔗 复制链接';
+                                                        }, 1500);
+                                                    });
+                                                    actionsWrap.appendChild(copyUrlBtn);
+
+                                                    a.insertAdjacentElement('afterend', actionsWrap);
+                                                }
+                                            }
 
                                             if (!table.dataset.agDblClickBound) {
                                                 table.dataset.agDblClickBound = 'true';
@@ -765,19 +792,52 @@ fun WebRemoteScreen(
 
                                         function scanAllTables() {
                                             var tables = document.querySelectorAll('table');
-                                            tables.forEach(processTable);
+                                            for (var ti = 0; ti < tables.length; ti++) {
+                                                processTable(tables[ti]);
+                                            }
                                         }
 
                                         scanAllTables();
 
+                                        var scanDebounceTimer = null;
+                                        var isInternalDomMutating = false;
+
+                                        function scheduleScanAllTables() {
+                                            if (scanDebounceTimer) clearTimeout(scanDebounceTimer);
+                                            scanDebounceTimer = setTimeout(function() {
+                                                scanDebounceTimer = null;
+                                                isInternalDomMutating = true;
+                                                try {
+                                                    scanAllTables();
+                                                } finally {
+                                                    setTimeout(function() { isInternalDomMutating = false; }, 50);
+                                                }
+                                            }, 350);
+                                        }
+
                                         var observer = new MutationObserver(function(mutations) {
+                                            if (isInternalDomMutating) return;
+
                                             var shouldScan = false;
                                             for (var i = 0; i < mutations.length; i++) {
                                                 var m = mutations[i];
+                                                var target = m.target;
+                                                if (target && target.classList &&
+                                                   (target.classList.contains('ag-table-toolbar') || 
+                                                    target.classList.contains('ag-link-actions') || 
+                                                    target.classList.contains('ag-selection-bubble'))) {
+                                                    continue;
+                                                }
                                                 if (m.addedNodes && m.addedNodes.length > 0) {
                                                     for (var j = 0; j < m.addedNodes.length; j++) {
                                                         var node = m.addedNodes[j];
                                                         if (node.nodeType === 1) {
+                                                            if (node.classList &&
+                                                               (node.classList.contains('ag-table-toolbar') || 
+                                                                node.classList.contains('ag-link-actions') || 
+                                                                node.classList.contains('ag-selection-bubble'))) {
+                                                                continue;
+                                                            }
                                                             if (node.tagName === 'TABLE' || (node.querySelector && node.querySelector('table, a[href]'))) {
                                                                 shouldScan = true;
                                                                 break;
@@ -788,7 +848,7 @@ fun WebRemoteScreen(
                                                 if (shouldScan) break;
                                             }
                                             if (shouldScan) {
-                                                scanAllTables();
+                                                scheduleScanAllTables();
                                             }
                                         });
 
