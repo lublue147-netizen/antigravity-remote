@@ -6,6 +6,7 @@ import com.antigravity.remote.data.local.SettingsDataStore
 import com.antigravity.remote.data.model.*
 import com.antigravity.remote.data.repository.AgentRepository
 import com.antigravity.remote.util.AccountUrlHelper
+import com.antigravity.remote.util.AppUpdateHelper
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -55,6 +56,38 @@ class MainViewModel @Inject constructor(
     val fitScreen = settingsDataStore.fitScreen.stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5000), true
     )
+    val autoCheckUpdates = settingsDataStore.autoCheckUpdates.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5000), true
+    )
+
+    private val _updateCheckState = MutableStateFlow<UpdateCheckState>(UpdateCheckState.Idle)
+    val updateCheckState: StateFlow<UpdateCheckState> = _updateCheckState.asStateFlow()
+
+    private val _availableReleases = MutableStateFlow<List<AppReleaseInfo>>(emptyList())
+    val availableReleases: StateFlow<List<AppReleaseInfo>> = _availableReleases.asStateFlow()
+
+    private val _isLoadingReleases = MutableStateFlow(false)
+    val isLoadingReleases: StateFlow<Boolean> = _isLoadingReleases.asStateFlow()
+
+    private val _showUpdateDialog = MutableStateFlow(false)
+    val showUpdateDialog: StateFlow<Boolean> = _showUpdateDialog.asStateFlow()
+
+    private val _selectedReleaseForDialog = MutableStateFlow<AppReleaseInfo?>(null)
+    val selectedReleaseForDialog: StateFlow<AppReleaseInfo?> = _selectedReleaseForDialog.asStateFlow()
+
+    private val _showVersionPickerDialog = MutableStateFlow(false)
+    val showVersionPickerDialog: StateFlow<Boolean> = _showVersionPickerDialog.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            settingsDataStore.autoCheckUpdates.first().let { enabled ->
+                if (enabled) {
+                    kotlinx.coroutines.delay(2500)
+                    checkForUpdates(isManual = false)
+                }
+            }
+        }
+    }
 
     private val _pendingLoadUrl = MutableSharedFlow<String>(extraBufferCapacity = 1)
     val pendingLoadUrl = _pendingLoadUrl.asSharedFlow()
@@ -183,5 +216,62 @@ class MainViewModel @Inject constructor(
 
     fun updateFitScreen(enabled: Boolean) {
         viewModelScope.launch { settingsDataStore.setFitScreen(enabled) }
+    }
+
+    fun updateAutoCheckUpdates(enabled: Boolean) {
+        viewModelScope.launch { settingsDataStore.setAutoCheckUpdates(enabled) }
+    }
+
+    fun checkForUpdates(isManual: Boolean = false) {
+        viewModelScope.launch {
+            _updateCheckState.value = UpdateCheckState.Checking
+            val result = AppUpdateHelper.checkLatestRelease()
+            result.fold(
+                onSuccess = { latest ->
+                    if (latest != null && latest.isNewer) {
+                        _updateCheckState.value = UpdateCheckState.NewVersionAvailable(latest)
+                        _selectedReleaseForDialog.value = latest
+                        _showUpdateDialog.value = true
+                    } else {
+                        _updateCheckState.value = UpdateCheckState.UpToDate(AppUpdateHelper.currentVersionName)
+                        if (isManual) {
+                            if (latest != null) {
+                                _selectedReleaseForDialog.value = latest
+                                _showUpdateDialog.value = true
+                            }
+                        }
+                    }
+                },
+                onFailure = { err ->
+                    _updateCheckState.value = UpdateCheckState.Error(err.localizedMessage ?: "检查更新失败")
+                }
+            )
+        }
+    }
+
+    fun fetchAllReleases() {
+        viewModelScope.launch {
+            _isLoadingReleases.value = true
+            _showVersionPickerDialog.value = true
+            val result = AppUpdateHelper.fetchAvailableReleases()
+            result.onSuccess { list ->
+                _availableReleases.value = list
+            }
+            _isLoadingReleases.value = false
+        }
+    }
+
+    fun selectReleaseForUpdate(release: AppReleaseInfo) {
+        _selectedReleaseForDialog.value = release
+        _showVersionPickerDialog.value = false
+        _showUpdateDialog.value = true
+    }
+
+    fun dismissUpdateDialog() {
+        _showUpdateDialog.value = false
+    }
+
+    fun dismissVersionPickerDialog() {
+        _showVersionPickerDialog.value = false
     }
 }

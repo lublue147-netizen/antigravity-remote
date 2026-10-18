@@ -9,11 +9,15 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import com.antigravity.remote.BuildConfig
+import com.antigravity.remote.data.model.UpdateCheckState
 import com.antigravity.remote.ui.viewmodel.MainViewModel
+import com.antigravity.remote.util.AppUpdateHelper
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -31,6 +35,9 @@ fun SettingsScreen(
     val notificationsEnabled by viewModel.notificationsEnabled.collectAsState()
     val immersiveMode by viewModel.immersiveMode.collectAsState()
     val fitScreen by viewModel.fitScreen.collectAsState()
+    val autoCheckUpdates by viewModel.autoCheckUpdates.collectAsState()
+    val updateCheckState by viewModel.updateCheckState.collectAsState()
+    val context = LocalContext.current
 
     var editWebUrl by remember(webRemoteUrl) { mutableStateOf(webRemoteUrl) }
     var editServerUrl by remember(serverUrl) { mutableStateOf(serverUrl) }
@@ -254,7 +261,139 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // 4. 关于
+        // 4. 软件版本与检测更新
+        Text(
+            "版本与更新",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Spacer(Modifier.height(8.dp))
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column {
+                        Text("当前安装版本", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "v${BuildConfig.VERSION_NAME} (Build ${BuildConfig.VERSION_CODE})",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+
+                    // Status Indicator Badge
+                    when (val state = updateCheckState) {
+                        is UpdateCheckState.Checking -> {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                        }
+                        is UpdateCheckState.UpToDate -> {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("已是最新版", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                                }
+                            }
+                        }
+                        is UpdateCheckState.NewVersionAvailable -> {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = androidx.compose.ui.graphics.Color(0xFF1B5E20)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Filled.Upgrade, contentDescription = null, modifier = Modifier.size(14.dp), tint = androidx.compose.ui.graphics.Color.White)
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("发现新版本 ${state.updateInfo.tagName}", style = MaterialTheme.typography.labelSmall, color = androidx.compose.ui.graphics.Color.White)
+                                }
+                            }
+                        }
+                        is UpdateCheckState.Error -> {
+                            Text(
+                                "检查失败: ${state.message}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                        UpdateCheckState.Idle -> {}
+                    }
+                }
+
+                Spacer(Modifier.height(14.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                Spacer(Modifier.height(12.dp))
+
+                // 自动检查更新开关
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                        Text("启动时自动检查更新", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                        Text(
+                            "有新版本发布时主动弹窗提示并支持一键下载安装",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = autoCheckUpdates,
+                        onCheckedChange = { viewModel.updateAutoCheckUpdates(it) }
+                    )
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                // 操作按钮组
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = { viewModel.checkForUpdates(isManual = true) },
+                        modifier = Modifier.weight(1f),
+                        enabled = updateCheckState !is UpdateCheckState.Checking
+                    ) {
+                        Icon(Icons.Filled.SystemUpdate, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(if (updateCheckState is UpdateCheckState.Checking) "检查中..." else "检查最新版本")
+                    }
+
+                    OutlinedButton(
+                        onClick = { viewModel.fetchAllReleases() },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Filled.List, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("选择版本更新")
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // 5. 关于
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
@@ -264,10 +403,10 @@ fun SettingsScreen(
             Column(modifier = Modifier.padding(16.dp)) {
                 Text("Antigravity Remote Client", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(4.dp))
-                Text("版本 v1.0.8 (多账号自动记忆与快速切换版)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                Text("版本 v${BuildConfig.VERSION_NAME} (多版本选择更新与深度功耗优化版)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "双模架构：同时支持 Google Antigravity 官方网页版全屏沉浸容器（多账号自动选择与记忆、全能下载与上传）及自建 WebSocket 代理原生面板。",
+                    "双模架构：同时支持 Google Antigravity 官方网页版全屏沉浸容器（多账号自动选择与记忆、全能下载与上传、应用内一键升级）及自建 WebSocket 代理原生面板。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

@@ -13,6 +13,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.antigravity.remote.ui.dialog.UpdateDialog
+import com.antigravity.remote.ui.dialog.VersionPickerDialog
 import com.antigravity.remote.ui.screen.ChatScreen
 import com.antigravity.remote.ui.screen.DashboardScreen
 import com.antigravity.remote.ui.screen.SettingsScreen
@@ -34,6 +36,12 @@ fun AppNavigation(viewModel: MainViewModel) {
     val immersiveMode by viewModel.immersiveMode.collectAsState()
 
     val isFullscreenWeb = currentRoute == Screen.WebRemote.route && immersiveMode
+
+    val showUpdateDialog by viewModel.showUpdateDialog.collectAsState()
+    val selectedReleaseForDialog by viewModel.selectedReleaseForDialog.collectAsState()
+    val showVersionPickerDialog by viewModel.showVersionPickerDialog.collectAsState()
+    val availableReleases by viewModel.availableReleases.collectAsState()
+    val isLoadingReleases by viewModel.isLoadingReleases.collectAsState()
 
     val items = listOf(Screen.WebRemote, Screen.Dashboard, Screen.Chat, Screen.Settings)
 
@@ -115,5 +123,27 @@ fun AppNavigation(viewModel: MainViewModel) {
                 )
             }
         }
+    }
+
+    // In-app Update Dialog
+    if (showUpdateDialog && selectedReleaseForDialog != null) {
+        UpdateDialog(
+            release = selectedReleaseForDialog!!,
+            onDismiss = { viewModel.dismissUpdateDialog() },
+            onSelectOtherVersions = { viewModel.fetchAllReleases() }
+        )
+    }
+
+    // Version Picker Dialog for selecting specific release to install
+    if (showVersionPickerDialog) {
+        VersionPickerDialog(
+            releases = availableReleases,
+            isLoading = isLoadingReleases,
+            onSelectRelease = { release ->
+                viewModel.selectReleaseForUpdate(release)
+            },
+            onDismiss = { viewModel.dismissVersionPickerDialog() },
+            onRefresh = { viewModel.fetchAllReleases() }
+        )
     }
 }

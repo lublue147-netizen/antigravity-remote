@@ -1344,6 +1344,19 @@ fun WebRemoteScreen(
                         Spacer(Modifier.width(8.dp))
                         Text(if (immersiveMode) "显示底栏" else "全屏沉浸", modifier = Modifier.weight(1f))
                     }
+
+                    // 8. 检查更新
+                    TextButton(
+                        onClick = {
+                            showFabMenu = false
+                            viewModel.checkForUpdates(isManual = true)
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Filled.SystemUpdate, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("检查更新", modifier = Modifier.weight(1f))
+                    }
                 }
             }
         }

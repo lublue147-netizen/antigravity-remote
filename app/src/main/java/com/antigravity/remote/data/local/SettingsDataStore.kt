@@ -28,6 +28,7 @@ class SettingsDataStore @Inject constructor(
         val USE_TLS = booleanPreferencesKey("use_tls")
         val IMMERSIVE_MODE = booleanPreferencesKey("immersive_mode")
         val FIT_SCREEN = booleanPreferencesKey("fit_screen")
+        val AUTO_CHECK_UPDATES = booleanPreferencesKey("auto_check_updates")
     }
 
     val isLoaded: Flow<Boolean> = context.dataStore.data.map { true }
@@ -43,6 +44,7 @@ class SettingsDataStore @Inject constructor(
     val useTls: Flow<Boolean> = context.dataStore.data.map { it[Keys.USE_TLS] ?: false }
     val immersiveMode: Flow<Boolean> = context.dataStore.data.map { it[Keys.IMMERSIVE_MODE] ?: true }
     val fitScreen: Flow<Boolean> = context.dataStore.data.map { it[Keys.FIT_SCREEN] ?: true }
+    val autoCheckUpdates: Flow<Boolean> = context.dataStore.data.map { it[Keys.AUTO_CHECK_UPDATES] ?: true }
 
     suspend fun setServerUrl(url: String) {
         context.dataStore.edit { it[Keys.SERVER_URL] = url }
@@ -86,5 +88,9 @@ class SettingsDataStore @Inject constructor(
 
     suspend fun setFitScreen(enabled: Boolean) {
         context.dataStore.edit { it[Keys.FIT_SCREEN] = enabled }
+    }
+
+    suspend fun setAutoCheckUpdates(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.AUTO_CHECK_UPDATES] = enabled }
     }
 }
