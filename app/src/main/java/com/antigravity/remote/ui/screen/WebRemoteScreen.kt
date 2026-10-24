@@ -82,9 +82,9 @@ fun WebRemoteScreen(
     val fitScreen by viewModel.fitScreen.collectAsState()
     val context = LocalContext.current
 
-    fun getCurrentActiveUrl(): String = webViewInstance?.url ?: viewModel.lastActiveUrl.value.ifBlank { webRemoteUrl }
-
     var webViewInstance by remember { mutableStateOf<WebView?>(null) }
+
+    fun getCurrentActiveUrl(): String = webViewInstance?.url ?: viewModel.lastActiveUrl.value.ifBlank { webRemoteUrl }
     var canGoBack by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
     var progress by remember { mutableFloatStateOf(0f) }
