@@ -67,7 +67,7 @@ data class TableLinksGroup(
     val links: List<TableLinkItem>
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun WebRemoteScreen(
@@ -76,12 +76,13 @@ fun WebRemoteScreen(
 ) {
     val isSettingsLoaded by viewModel.isSettingsLoaded.collectAsState()
     val webRemoteUrl by viewModel.webRemoteUrl.collectAsState()
-    val lastActiveUrl by viewModel.lastActiveUrl.collectAsState()
     val lastAccountIndex by viewModel.lastAccountIndex.collectAsState()
     val autoRestoreAccount by viewModel.autoRestoreAccount.collectAsState()
     val immersiveMode by viewModel.immersiveMode.collectAsState()
     val fitScreen by viewModel.fitScreen.collectAsState()
     val context = LocalContext.current
+
+    fun getCurrentActiveUrl(): String = webViewInstance?.url ?: viewModel.lastActiveUrl.value.ifBlank { webRemoteUrl }
 
     var webViewInstance by remember { mutableStateOf<WebView?>(null) }
     var canGoBack by remember { mutableStateOf(false) }
@@ -103,7 +104,7 @@ fun WebRemoteScreen(
         fileChooserCallback = null
     }
 
-    val isImeVisible = WindowInsets.ime.asPaddingValues().calculateBottomPadding() > 0.dp
+    val isImeVisible = WindowInsets.isImeVisible
 
     LaunchedEffect(isImeVisible) {
         if (isImeVisible) {
@@ -138,6 +139,10 @@ fun WebRemoteScreen(
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
+        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            webViewInstance?.onResume()
+            webViewInstance?.resumeTimers()
+        }
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
             webViewInstance?.url?.let { currentUrl ->
@@ -233,6 +238,8 @@ fun WebRemoteScreen(
 
                         setBackgroundColor(0xFF121212.toInt())
                         setLayerType(View.LAYER_TYPE_NONE, null)
+                        isVerticalScrollBarEnabled = false
+                        isHorizontalScrollBarEnabled = false
                         resumeTimers()
                         onResume()
                         isFocusable = true
@@ -257,6 +264,7 @@ fun WebRemoteScreen(
                             cacheMode = WebSettings.LOAD_DEFAULT
                             setSupportMultipleWindows(true)
                             javaScriptCanOpenWindowsAutomatically = true
+                            mediaPlaybackRequiresUserGesture = true
 
                             // Chrome mobile UA without '; wv' for Google sign-in compatibility
                             val defaultUa = userAgentString
@@ -428,6 +436,9 @@ fun WebRemoteScreen(
                                 if (fitScreen) {
                                     val jsInject = """
                                         (function() {
+                                            if (window.__antigravityMobileFitInjected) return;
+                                            window.__antigravityMobileFitInjected = true;
+
                                             var meta = document.querySelector('meta[name="viewport"]');
                                             if (!meta) {
                                                 meta = document.createElement('meta');
@@ -449,48 +460,40 @@ fun WebRemoteScreen(
                                                         background-color: #121212 !important;
                                                         overflow-x: hidden !important;
                                                     }
-                                                    /* Expand main layout containers to full height without letterboxing */
-                                                    main, #root, #app, [class*="layout"], [class*="container"] {
+                                                    /* Expand top-level root containers without breaking internal flex layouts */
+                                                    #root, #app, main, body > div:first-child {
                                                         width: 100% !important;
-                                                        max-width: 100% !important;
                                                         min-height: 100% !important;
                                                     }
                                                 `;
                                                 document.head.appendChild(style);
                                             }
 
-                                            // Automatically scroll focused input/textarea into view when virtual keyboard appears
-                                            function ensureInputVisible() {
-                                                var active = document.activeElement;
+                                            // Smooth debounced input visibility adjustment on focusin (no resize polling or smooth animation loops)
+                                            var scrollTimer = null;
+                                            window.addEventListener('focusin', function(e) {
+                                                var active = e.target;
                                                 if (active && (
                                                     active.tagName === 'INPUT' || 
                                                     active.tagName === 'TEXTAREA' || 
                                                     active.isContentEditable || 
-                                                    active.getAttribute('role') === 'textbox' ||
-                                                    (active.className && typeof active.className === 'string' && active.className.indexOf('monaco') !== -1)
+                                                    active.getAttribute('role') === 'textbox'
                                                 )) {
-                                                    setTimeout(function() {
-                                                        active.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                                    }, 150);
-                                                    setTimeout(function() {
-                                                        active.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                                    }, 350);
+                                                    if (scrollTimer) clearTimeout(scrollTimer);
+                                                    scrollTimer = setTimeout(function() {
+                                                        try {
+                                                            active.scrollIntoView({ behavior: 'auto', block: 'nearest' });
+                                                        } catch (_) {}
+                                                    }, 200);
                                                 }
-                                            }
-
-                                            window.addEventListener('focusin', ensureInputVisible, true);
-
-                                            if (window.visualViewport) {
-                                                window.visualViewport.addEventListener('resize', ensureInputVisible);
-                                            } else {
-                                                window.addEventListener('resize', ensureInputVisible);
-                                            }
+                                            }, true);
                                         })();
                                     """.trimIndent()
                                     view?.evaluateJavascript(jsInject, null)
                                 }
 
-                                // 3. Inject Table Link Enhancer & Link Long-Press Context Menu
+                                // 3. Inject Lightweight Event-Delegated Link & Table Enhancer
+                                // Zero continuous MutationObservers, zero DOM thrashing, zero background CPU drain
                                 val jsLinkEnhancer = """
                                     (function() {
                                         if (window.__antigravityLinkEnhancerInjected) return;
@@ -530,60 +533,14 @@ fun WebRemoteScreen(
                                                     background: rgba(66, 133, 244, 0.38);
                                                     transform: scale(0.97);
                                                 }
-                                                .ag-link-actions {
-                                                    display: inline-flex;
-                                                    align-items: center;
-                                                    gap: 4px;
-                                                    margin-left: 6px;
-                                                    vertical-align: middle;
-                                                    white-space: nowrap;
-                                                }
-                                                .ag-btn-copy-text, .ag-btn-copy-url {
-                                                    display: inline-flex;
-                                                    align-items: center;
-                                                    justify-content: center;
-                                                    padding: 3px 7px;
-                                                    font-size: 11px;
-                                                    font-family: system-ui, -apple-system, sans-serif;
-                                                    line-height: 1.2;
-                                                    border-radius: 6px;
-                                                    cursor: pointer;
-                                                    user-select: none;
-                                                    -webkit-user-select: none;
-                                                    touch-action: manipulation;
-                                                    border: 1px solid rgba(138, 180, 248, 0.3);
-                                                }
-                                                .ag-btn-copy-text {
-                                                    background: rgba(255, 193, 7, 0.15);
-                                                    color: #ffd54f;
-                                                    border-color: rgba(255, 193, 7, 0.35);
-                                                }
-                                                .ag-btn-copy-text:active {
-                                                    background: rgba(255, 193, 7, 0.35);
-                                                }
-                                                .ag-btn-copy-url {
-                                                    background: rgba(66, 133, 244, 0.15);
-                                                    color: #8ab4f8;
-                                                    border-color: rgba(138, 180, 248, 0.35);
-                                                }
-                                                .ag-btn-copy-url:active {
-                                                    background: rgba(66, 133, 244, 0.35);
-                                                }
-                                                .ag-btn-copy-text.copied, .ag-btn-copy-url.copied {
-                                                    background: rgba(52, 168, 83, 0.35) !important;
-                                                    color: #81c995 !important;
-                                                    border-color: rgba(52, 168, 83, 0.6) !important;
-                                                }
                                                 table td, table th {
                                                     user-select: text;
                                                     -webkit-user-select: text;
-                                                    user-select: contain;
-                                                    -webkit-user-select: contain;
                                                     position: relative;
                                                 }
                                                 table a {
-                                                    -webkit-user-select: all !important;
-                                                    user-select: all !important;
+                                                    -webkit-user-select: text !important;
+                                                    user-select: text !important;
                                                     -webkit-touch-callout: none !important;
                                                     cursor: pointer;
                                                 }
@@ -614,249 +571,96 @@ fun WebRemoteScreen(
                                                 var cells = Array.from(row.querySelectorAll('th, td'));
                                                 return '| ' + cells.map(function(c) {
                                                     var clone = c.cloneNode(true);
-                                                    clone.querySelectorAll('.ag-link-actions, .ag-table-toolbar').forEach(function(b) { b.remove(); });
+                                                    clone.querySelectorAll('.ag-table-toolbar').forEach(function(b) { b.remove(); });
                                                     return clone.textContent.trim().replace(/\|/g, '\\|');
                                                 }).join(' | ') + ' |';
                                             }).join('\n');
                                         }
 
-                                        function linkifyCell(cell) {
-                                            if (!cell || cell.dataset.agLinkified) return;
-                                            cell.dataset.agLinkified = 'true';
-                                            if (cell.querySelector('a')) return;
-                                            var html = cell.innerHTML;
-                                            var urlPattern = /(https?:\/\/[^\s<>"']+)/g;
-                                            if (urlPattern.test(html)) {
-                                                cell.innerHTML = html.replace(urlPattern, function(u) {
-                                                    return '<a href="' + u + '" target="_blank">' + u + '</a>';
-                                                });
-                                            }
-                                        }
+                                        function ensureTableToolbar(table) {
+                                            if (!table || !table.parentElement || table.dataset.agToolbarAdded) return;
+                                            if (table.closest && table.closest('.monaco-editor, .monaco-diff-editor, .xterm, [class*="monaco"]')) return;
+                                            table.dataset.agToolbarAdded = 'true';
+                                            var prev = table.previousElementSibling;
+                                            if (prev && prev.classList && prev.classList.contains('ag-table-toolbar')) return;
 
-                                        function processTable(table) {
-                                            if (!table) return;
-
-                                            var unlinkedCells = table.querySelectorAll('td:not([data-ag-linkified]), th:not([data-ag-linkified])');
-                                            for (var ci = 0; ci < unlinkedCells.length; ci++) {
-                                                linkifyCell(unlinkedCells[ci]);
-                                            }
-
-                                            var allLinks = table.querySelectorAll('a[href]');
+                                            var links = table.querySelectorAll('a[href]');
                                             var validLinks = [];
-                                            for (var li = 0; li < allLinks.length; li++) {
-                                                var a = allLinks[li];
-                                                var href = a.getAttribute('href') || a.href;
-                                                if (!href || href.startsWith('javascript:') || href.startsWith('#')) continue;
-
-                                                var fullUrl = a.href || href;
-                                                var textContent = (a.textContent || fullUrl).trim();
-                                                validLinks.push({
-                                                    url: fullUrl,
-                                                    text: textContent
-                                                });
-
-                                                if (!a.dataset.agClickBound) {
-                                                    a.dataset.agClickBound = 'true';
-                                                    a.addEventListener('click', function(ev) {
-                                                        var h = a.getAttribute('href') || a.href;
-                                                        if (h && h.indexOf('/u/') === -1 && h.indexOf('authuser=') === -1) {
-                                                            ev.preventDefault();
-                                                            ev.stopPropagation();
-                                                            var t = (a.textContent || '').trim();
-                                                            var u = a.href || h;
-                                                            if (window.AndroidLinkHelper) {
-                                                                window.AndroidLinkHelper.showLinkActions(u, t);
-                                                            }
-                                                        }
+                                            for (var i = 0; i < links.length; i++) {
+                                                var a = links[i];
+                                                var h = a.getAttribute('href') || a.href;
+                                                if (h && !h.startsWith('javascript:') && !h.startsWith('#')) {
+                                                    validLinks.push({
+                                                        url: a.href || h,
+                                                        text: (a.textContent || h).trim()
                                                     });
-                                                }
-
-                                                if (!a.nextElementSibling || !a.nextElementSibling.classList.contains('ag-link-actions')) {
-                                                    var actionsWrap = document.createElement('span');
-                                                    actionsWrap.className = 'ag-link-actions';
-
-                                                    var copyTextBtn = document.createElement('span');
-                                                    copyTextBtn.className = 'ag-btn-copy-text';
-                                                    copyTextBtn.setAttribute('role', 'button');
-                                                    copyTextBtn.textContent = '📝 复制文字';
-                                                    copyTextBtn.addEventListener('click', function(ev) {
-                                                        ev.preventDefault();
-                                                        ev.stopPropagation();
-                                                        var curText = (a.textContent || '').trim();
-                                                        if (window.AndroidLinkHelper) {
-                                                            window.AndroidLinkHelper.copyToClipboard(curText, '已复制文字: ' + curText);
-                                                        }
-                                                        copyTextBtn.classList.add('copied');
-                                                        copyTextBtn.textContent = '✓ 已复制';
-                                                        setTimeout(function() {
-                                                            copyTextBtn.classList.remove('copied');
-                                                            copyTextBtn.textContent = '📝 复制文字';
-                                                        }, 1500);
-                                                    });
-                                                    actionsWrap.appendChild(copyTextBtn);
-
-                                                    var copyUrlBtn = document.createElement('span');
-                                                    copyUrlBtn.className = 'ag-btn-copy-url';
-                                                    copyUrlBtn.setAttribute('role', 'button');
-                                                    copyUrlBtn.textContent = '🔗 复制链接';
-                                                    copyUrlBtn.addEventListener('click', function(ev) {
-                                                        ev.preventDefault();
-                                                        ev.stopPropagation();
-                                                        var curUrl = a.href || href;
-                                                        if (window.AndroidLinkHelper) {
-                                                            window.AndroidLinkHelper.copyToClipboard(curUrl, '已复制链接: ' + curUrl);
-                                                        }
-                                                        copyUrlBtn.classList.add('copied');
-                                                        copyUrlBtn.textContent = '✓ 已复制';
-                                                        setTimeout(function() {
-                                                            copyUrlBtn.classList.remove('copied');
-                                                            copyUrlBtn.textContent = '🔗 复制链接';
-                                                        }, 1500);
-                                                    });
-                                                    actionsWrap.appendChild(copyUrlBtn);
-
-                                                    a.insertAdjacentElement('afterend', actionsWrap);
                                                 }
                                             }
 
-                                            if (!table.dataset.agDblClickBound) {
-                                                table.dataset.agDblClickBound = 'true';
-                                                table.addEventListener('dblclick', function(e) {
-                                                    var cell = e.target;
-                                                    while (cell && cell.tagName !== 'TD' && cell.tagName !== 'TH') {
-                                                        cell = cell.parentElement;
-                                                    }
-                                                    if (cell) {
-                                                        var clone = cell.cloneNode(true);
-                                                        clone.querySelectorAll('.ag-link-actions, .ag-table-toolbar').forEach(function(b) { b.remove(); });
-                                                        var cellText = clone.textContent.trim();
-                                                        if (cellText && window.AndroidLinkHelper) {
-                                                            window.AndroidLinkHelper.copyToClipboard(cellText, '已复制单元格文字: ' + cellText);
-                                                        }
+                                            var toolbar = document.createElement('div');
+                                            toolbar.className = 'ag-table-toolbar';
+
+                                            if (validLinks.length > 0) {
+                                                var linksBtn = document.createElement('button');
+                                                linksBtn.type = 'button';
+                                                linksBtn.className = 'ag-table-tool-btn';
+                                                linksBtn.textContent = '🔗 表格链接 (' + validLinks.length + ')';
+                                                linksBtn.addEventListener('click', function(ev) {
+                                                    ev.preventDefault();
+                                                    ev.stopPropagation();
+                                                    if (window.AndroidLinkHelper) {
+                                                        window.AndroidLinkHelper.showTableLinks('表格链接', JSON.stringify(validLinks));
                                                     }
                                                 });
+                                                toolbar.appendChild(linksBtn);
                                             }
 
-                                            if (validLinks.length > 0 && table.parentElement) {
-                                                var prev = table.previousElementSibling;
-                                                if (!prev || !prev.classList.contains('ag-table-toolbar')) {
-                                                    var toolbar = document.createElement('div');
-                                                    toolbar.className = 'ag-table-toolbar';
-
-                                                    var linksBtn = document.createElement('button');
-                                                    linksBtn.type = 'button';
-                                                    linksBtn.className = 'ag-table-tool-btn';
-                                                    linksBtn.textContent = '🔗 表格链接 (' + validLinks.length + ')';
-                                                    linksBtn.addEventListener('click', function(ev) {
-                                                        ev.preventDefault();
-                                                        ev.stopPropagation();
-                                                        var currentLinks = [];
-                                                        table.querySelectorAll('a[href]').forEach(function(l) {
-                                                            var h = l.getAttribute('href') || l.href;
-                                                            if (h && !h.startsWith('javascript:') && !h.startsWith('#')) {
-                                                                currentLinks.push({
-                                                                    url: l.href || h,
-                                                                    text: (l.textContent || h).trim()
-                                                                });
-                                                            }
-                                                        });
-                                                        if (window.AndroidLinkHelper) {
-                                                            window.AndroidLinkHelper.showTableLinks('表格链接', JSON.stringify(currentLinks));
-                                                        }
-                                                    });
-                                                    toolbar.appendChild(linksBtn);
-
-                                                    var copyTableBtn = document.createElement('button');
-                                                    copyTableBtn.type = 'button';
-                                                    copyTableBtn.className = 'ag-table-tool-btn';
-                                                    copyTableBtn.textContent = '📄 复制表格';
-                                                    copyTableBtn.addEventListener('click', function(ev) {
-                                                        ev.preventDefault();
-                                                        ev.stopPropagation();
-                                                        var md = extractTableMarkdown(table);
-                                                        if (window.AndroidLinkHelper) {
-                                                            window.AndroidLinkHelper.copyToClipboard(md, '已复制表格文本');
-                                                        }
-                                                    });
-                                                    toolbar.appendChild(copyTableBtn);
-
-                                                    table.parentElement.insertBefore(toolbar, table);
-                                                } else {
-                                                    var countBtn = prev.querySelector('.ag-table-tool-btn');
-                                                    if (countBtn) {
-                                                        countBtn.textContent = '🔗 表格链接 (' + validLinks.length + ')';
-                                                    }
+                                            var copyTableBtn = document.createElement('button');
+                                            copyTableBtn.type = 'button';
+                                            copyTableBtn.className = 'ag-table-tool-btn';
+                                            copyTableBtn.textContent = '📄 复制表格';
+                                            copyTableBtn.addEventListener('click', function(ev) {
+                                                ev.preventDefault();
+                                                ev.stopPropagation();
+                                                var md = extractTableMarkdown(table);
+                                                if (window.AndroidLinkHelper) {
+                                                    window.AndroidLinkHelper.copyToClipboard(md, '已复制表格文本');
                                                 }
-                                            }
+                                            });
+                                            toolbar.appendChild(copyTableBtn);
+
+                                            table.parentElement.insertBefore(toolbar, table);
                                         }
 
-                                        function scanAllTables() {
-                                            var tables = document.querySelectorAll('table');
-                                            for (var ti = 0; ti < tables.length; ti++) {
-                                                processTable(tables[ti]);
-                                            }
+                                        // Initial scan for currently loaded static tables
+                                        var initialTables = document.querySelectorAll('table');
+                                        for (var ti = 0; ti < initialTables.length; ti++) {
+                                            ensureTableToolbar(initialTables[ti]);
                                         }
 
-                                        scanAllTables();
-
-                                        var scanDebounceTimer = null;
-                                        var isInternalDomMutating = false;
-
-                                        function scheduleScanAllTables() {
-                                            if (scanDebounceTimer) clearTimeout(scanDebounceTimer);
-                                            scanDebounceTimer = setTimeout(function() {
-                                                scanDebounceTimer = null;
-                                                isInternalDomMutating = true;
-                                                try {
-                                                    scanAllTables();
-                                                } finally {
-                                                    setTimeout(function() { isInternalDomMutating = false; }, 50);
+                                        // Event Delegation for table cell double-click to copy text
+                                        document.addEventListener('dblclick', function(e) {
+                                            var cell = e.target.closest ? e.target.closest('td, th') : null;
+                                            if (cell) {
+                                                if (cell.closest && cell.closest('.monaco-editor, .xterm')) return;
+                                                var clone = cell.cloneNode(true);
+                                                clone.querySelectorAll('.ag-table-toolbar').forEach(function(b) { b.remove(); });
+                                                var cellText = clone.textContent.trim();
+                                                if (cellText && window.AndroidLinkHelper) {
+                                                    window.AndroidLinkHelper.copyToClipboard(cellText, '已复制单元格文字: ' + cellText);
                                                 }
-                                            }, 350);
-                                        }
-
-                                        var observer = new MutationObserver(function(mutations) {
-                                            if (isInternalDomMutating) return;
-
-                                            var shouldScan = false;
-                                            for (var i = 0; i < mutations.length; i++) {
-                                                var m = mutations[i];
-                                                var target = m.target;
-                                                if (target && target.classList &&
-                                                   (target.classList.contains('ag-table-toolbar') || 
-                                                    target.classList.contains('ag-link-actions') || 
-                                                    target.classList.contains('ag-selection-bubble'))) {
-                                                    continue;
-                                                }
-                                                if (m.addedNodes && m.addedNodes.length > 0) {
-                                                    for (var j = 0; j < m.addedNodes.length; j++) {
-                                                        var node = m.addedNodes[j];
-                                                        if (node.nodeType === 1) {
-                                                            if (node.classList &&
-                                                               (node.classList.contains('ag-table-toolbar') || 
-                                                                node.classList.contains('ag-link-actions') || 
-                                                                node.classList.contains('ag-selection-bubble'))) {
-                                                                continue;
-                                                            }
-                                                            if (node.tagName === 'TABLE' || (node.querySelector && node.querySelector('table, a[href]'))) {
-                                                                shouldScan = true;
-                                                                break;
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                                if (shouldScan) break;
                                             }
-                                            if (shouldScan) {
-                                                scheduleScanAllTables();
+                                        }, true);
+
+                                        // Lazy toolbar attachment on user interaction (zero background scanning during streaming)
+                                        document.addEventListener('click', function(e) {
+                                            var table = e.target.closest ? e.target.closest('table') : null;
+                                            if (table && !table.dataset.agToolbarAdded) {
+                                                ensureTableToolbar(table);
                                             }
-                                        });
+                                        }, true);
 
-                                        observer.observe(document.body || document.documentElement, {
-                                            childList: true,
-                                            subtree: true
-                                        });
-
+                                        // Selection bubble management
                                         var selBubble = null;
                                         function removeSelBubble() {
                                             if (selBubble && selBubble.parentElement) {
@@ -866,18 +670,18 @@ fun WebRemoteScreen(
                                         }
 
                                         document.addEventListener('touchend', function() {
-                                            setTimeout(function() {
-                                                var sel = window.getSelection();
-                                                if (!sel || sel.isCollapsed) {
-                                                    removeSelBubble();
-                                                    return;
-                                                }
-                                                var selectedText = sel.toString().trim();
-                                                if (!selectedText) {
-                                                    removeSelBubble();
-                                                    return;
-                                                }
+                                            var sel = window.getSelection ? window.getSelection() : null;
+                                            if (!sel || sel.isCollapsed) {
                                                 removeSelBubble();
+                                                return;
+                                            }
+                                            var selectedText = sel.toString().trim();
+                                            if (!selectedText) {
+                                                removeSelBubble();
+                                                return;
+                                            }
+                                            removeSelBubble();
+                                            try {
                                                 var range = sel.getRangeAt(0);
                                                 var rect = range.getBoundingClientRect();
                                                 if (rect.width === 0 && rect.height === 0) return;
@@ -899,28 +703,27 @@ fun WebRemoteScreen(
                                                 });
 
                                                 document.body.appendChild(selBubble);
-                                            }, 200);
-                                        });
+                                            } catch (_) {}
+                                        }, { passive: true });
 
                                         document.addEventListener('selectionchange', function() {
-                                            var sel = window.getSelection();
-                                            if (!sel || sel.isCollapsed) {
-                                                removeSelBubble();
+                                            if (selBubble) {
+                                                var sel = window.getSelection ? window.getSelection() : null;
+                                                if (!sel || sel.isCollapsed) {
+                                                    removeSelBubble();
+                                                }
                                             }
                                         });
 
+                                        // Long-press detection on links for quick actions (URL, Text, Browser, Download)
                                         var longPressTimer = null;
                                         var touchStartX = 0;
                                         var touchStartY = 0;
                                         var currentTouchLink = null;
 
                                         document.addEventListener('touchstart', function(e) {
-                                            var target = e.target;
-                                            while (target && target.tagName !== 'A') {
-                                                if (target.classList && (target.classList.contains('ag-btn-copy-text') || target.classList.contains('ag-btn-copy-url'))) return;
-                                                target = target.parentElement;
-                                            }
-                                            if (target && target.tagName === 'A') {
+                                            var target = e.target.closest ? e.target.closest('a') : null;
+                                            if (target) {
                                                 var href = target.getAttribute('href') || target.href;
                                                 if (href && !href.startsWith('javascript:') && !href.startsWith('#')) {
                                                     currentTouchLink = target;
@@ -966,11 +769,8 @@ fun WebRemoteScreen(
                                         }, { passive: true });
 
                                         document.addEventListener('contextmenu', function(e) {
-                                            var target = e.target;
-                                            while (target && target.tagName !== 'A') {
-                                                target = target.parentElement;
-                                            }
-                                            if (target && target.tagName === 'A') {
+                                            var target = e.target.closest ? e.target.closest('a') : null;
+                                            if (target) {
                                                 var href = target.getAttribute('href') || target.href;
                                                 if (href && !href.startsWith('javascript:') && !href.startsWith('#')) {
                                                     e.preventDefault();
@@ -998,9 +798,6 @@ fun WebRemoteScreen(
                                 // Also record URL on SPA client-side history updates (pushState / replaceState)
                                 if (url != null && AccountUrlHelper.isPersistableAppUrl(url)) {
                                     viewModel.recordActiveUrl(url)
-                                    try {
-                                        CookieManager.getInstance().flush()
-                                    } catch (_: Exception) {}
                                 }
                             }
 
@@ -1161,8 +958,9 @@ fun WebRemoteScreen(
 
                         // Determine the startup URL: restore last used account URL directly on cold start
                         val initialUrl = if (autoRestoreAccount) {
-                            if (lastActiveUrl.isNotBlank() && AccountUrlHelper.isPersistableAppUrl(lastActiveUrl)) {
-                                lastActiveUrl
+                            val activeUrl = viewModel.lastActiveUrl.value
+                            if (activeUrl.isNotBlank() && AccountUrlHelper.isPersistableAppUrl(activeUrl)) {
+                                activeUrl
                             } else if (lastAccountIndex > 0 && webRemoteUrl.isNotBlank()) {
                                 AccountUrlHelper.buildAccountUrl(webRemoteUrl, lastAccountIndex)
                             } else if (webRemoteUrl.isNotBlank()) {
@@ -1176,6 +974,10 @@ fun WebRemoteScreen(
 
                         loadUrl(initialUrl)
                         webViewInstance = this
+                        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                            onResume()
+                            resumeTimers()
+                        }
                     }
                 },
                 update = { _ ->
@@ -1267,7 +1069,7 @@ fun WebRemoteScreen(
                     TextButton(
                         onClick = {
                             showFabMenu = false
-                            val current = webViewInstance?.url ?: lastActiveUrl.ifBlank { webRemoteUrl }
+                            val current = getCurrentActiveUrl()
                             if (current.isNotBlank()) {
                                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                 clipboard.setPrimaryClip(ClipData.newPlainText("Current URL", current))
@@ -1279,6 +1081,62 @@ fun WebRemoteScreen(
                         Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
                         Text("复制当前网址", modifier = Modifier.weight(1f))
+                    }
+
+                    // 2.7 提取表格链接
+                    TextButton(
+                        onClick = {
+                            showFabMenu = false
+                            val js = """
+                                (function() {
+                                    var tables = document.querySelectorAll('table');
+                                    var allLinks = [];
+                                    for (var i = 0; i < tables.length; i++) {
+                                        tables[i].querySelectorAll('a[href]').forEach(function(l) {
+                                            var h = l.getAttribute('href') || l.href;
+                                            if (h && !h.startsWith('javascript:') && !h.startsWith('#')) {
+                                                allLinks.push({
+                                                    url: l.href || h,
+                                                    text: (l.textContent || h).trim()
+                                                });
+                                            }
+                                        });
+                                    }
+                                    return JSON.stringify(allLinks);
+                                })();
+                            """.trimIndent()
+                            webViewInstance?.evaluateJavascript(js) { result ->
+                                try {
+                                    if (result != null && result != "null" && result.isNotBlank()) {
+                                        val unescaped = org.json.JSONTokener(result).nextValue() as? String ?: result
+                                        val array = org.json.JSONArray(unescaped)
+                                        val list = mutableListOf<TableLinkItem>()
+                                        for (i in 0 until array.length()) {
+                                            val obj = array.getJSONObject(i)
+                                            val u = obj.optString("url", "")
+                                            val t = obj.optString("text", "")
+                                            if (u.isNotBlank()) {
+                                                list.add(TableLinkItem(url = u, text = t))
+                                            }
+                                        }
+                                        if (list.isNotEmpty()) {
+                                            activeTableLinks = TableLinksGroup(title = "网页表格链接 (${list.size} 个)", links = list)
+                                        } else {
+                                            Toast.makeText(context, "当前页面表格中未发现链接", Toast.LENGTH_SHORT).show()
+                                        }
+                                    } else {
+                                        Toast.makeText(context, "当前页面未发现表格", Toast.LENGTH_SHORT).show()
+                                    }
+                                } catch (_: Exception) {
+                                    Toast.makeText(context, "提取表格链接失败", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Filled.TableChart, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("提取表格链接", modifier = Modifier.weight(1f))
                     }
 
                     // 3. 切换多账号
@@ -1436,7 +1294,7 @@ fun WebRemoteScreen(
                             val isCurrent = index == lastAccountIndex
                             FilledTonalButton(
                                 onClick = {
-                                    val currentUrl = webViewInstance?.url ?: lastActiveUrl.ifBlank { webRemoteUrl }
+                                    val currentUrl = getCurrentActiveUrl()
                                     val newUrl = AccountUrlHelper.buildAccountUrl(currentUrl, index)
                                     viewModel.updateLastAccountIndex(index)
                                     viewModel.recordActiveUrl(newUrl)
@@ -1512,7 +1370,7 @@ fun WebRemoteScreen(
 
     // Change URL Dialog
     if (showUrlDialog) {
-        val currentActive = webViewInstance?.url ?: lastActiveUrl.ifBlank { webRemoteUrl }
+        val currentActive = getCurrentActiveUrl()
         var inputUrl by remember { mutableStateOf(currentActive) }
         AlertDialog(
             onDismissRequest = { showUrlDialog = false },

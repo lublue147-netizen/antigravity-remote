@@ -58,6 +58,22 @@ class SettingsDataStore @Inject constructor(
         context.dataStore.edit { it[Keys.LAST_ACTIVE_URL] = url }
     }
 
+    suspend fun updateActiveSession(
+        activeUrl: String,
+        accountIndex: Int?,
+        syncWebRemoteUrl: Boolean
+    ) {
+        context.dataStore.edit { prefs ->
+            prefs[Keys.LAST_ACTIVE_URL] = activeUrl
+            if (accountIndex != null) {
+                prefs[Keys.LAST_ACCOUNT_INDEX] = accountIndex
+            }
+            if (syncWebRemoteUrl) {
+                prefs[Keys.WEB_REMOTE_URL] = activeUrl
+            }
+        }
+    }
+
     suspend fun setLastAccountIndex(index: Int) {
         context.dataStore.edit { it[Keys.LAST_ACCOUNT_INDEX] = index }
     }

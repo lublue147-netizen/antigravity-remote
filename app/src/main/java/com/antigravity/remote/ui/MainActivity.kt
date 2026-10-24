@@ -18,6 +18,14 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // Power-saving optimization: cap display refresh rate to 60Hz to eliminate 90Hz/120Hz GPU and screen drain
+        try {
+            val params = window.attributes
+            params.preferredRefreshRate = 60f
+            window.attributes = params
+        } catch (_: Exception) {}
+
         setContent {
             val viewModel: MainViewModel = hiltViewModel()
             val darkTheme by viewModel.darkTheme.collectAsState()

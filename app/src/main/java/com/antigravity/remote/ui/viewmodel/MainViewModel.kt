@@ -145,15 +145,13 @@ class MainViewModel @Inject constructor(
         val cleanUrl = url.trim()
         if (cleanUrl == lastActiveUrl.value) return
         viewModelScope.launch {
-            settingsDataStore.setLastActiveUrl(cleanUrl)
             val detectedIndex = AccountUrlHelper.extractAccountIndex(cleanUrl)
-            if (detectedIndex != null && detectedIndex != lastAccountIndex.value) {
-                settingsDataStore.setLastAccountIndex(detectedIndex)
-            }
-            if (cleanUrl != webRemoteUrl.value) {
-                // Keep webRemoteUrl synchronized with active account URL
-                settingsDataStore.setWebRemoteUrl(cleanUrl)
-            }
+            val indexToUpdate = if (detectedIndex != null && detectedIndex != lastAccountIndex.value) detectedIndex else null
+            settingsDataStore.updateActiveSession(
+                activeUrl = cleanUrl,
+                accountIndex = indexToUpdate,
+                syncWebRemoteUrl = false
+            )
         }
     }
 
