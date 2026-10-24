@@ -2,7 +2,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Platform-Android-3DDC84?style=for-the-badge&logo=android&logoColor=white" />
-  <img src="https://img.shields.io/badge/Version-v1.0.12-blue?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Version-v1.0.13-blue?style=for-the-badge" />
   <img src="https://img.shields.io/badge/Language-Kotlin-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white" />
   <img src="https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4?style=for-the-badge&logo=jetpackcompose&logoColor=white" />
   <img src="https://img.shields.io/badge/Min%20SDK-26-brightgreen?style=for-the-badge" />
@@ -10,8 +10,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/lublue147-netizen/antigravity-remote/releases/download/v1.0.12/app-release.apk">
-    <img src="https://img.shields.io/badge/📥%20下载-最新%20v1.0.12%20Release%20APK-1A73E8?style=for-the-badge&logo=android&logoColor=white" />
+  <a href="https://github.com/lublue147-netizen/antigravity-remote/releases/download/v1.0.13/app-release.apk">
+    <img src="https://img.shields.io/badge/📥%20下载-最新%20v1.0.13%20Release%20APK-1A73E8?style=for-the-badge&logo=android&logoColor=white" />
   </a>
 </p>
 
@@ -23,7 +23,15 @@ A native and containerized Android client for remotely controlling **Google Anti
 
 ## 🌟 核心特性 (Features)
 
-### 1. 🔄 应用内检测更新与多版本选择更新 (In-App Updates & Version Picker) (v1.0.12 重磅)
+### 1. 🔋 前台发热与耗电深度治理 (Foreground Thermal & Battery Optimization) (v1.0.13 重磅)
+- **根除 DOM Mutation 监听与侵入式重绘**：彻底移除后台轮询与 `MutationObserver` 按钮注入，改用零开销的原生事件委托（`Event Delegation`）拦截链接长按、双击与点击事件；消除 AI 流式输出打字时 Chromium 渲染引擎死循环，前台 CPU 占用归零。
+- **60Hz 动态锁频节电**：针对 Android 高刷屏（90Hz/120Hz/144Hz）显式将 Activity 刷新率限制在 60Hz，彻底解决因光标闪烁导致屏幕和 GPU 持续锁死在 120Hz 的高额耗电。
+- **消除 Monaco 编辑器与 xterm 终端重排干扰**：精简视口自适应规则为 `#root, #app, main` 顶层节点，全面隔离代码编辑器容器，杜绝键盘输入和代码滚动时的全页递归 Layout 计算。
+- **Jetpack Compose 状态解耦与 IME 节流**：剥离顶层 URL 重组监听，并将软键盘监听重构为 `WindowInsets.isImeVisible`，消除输入法升降过程中的高频逐帧重组。
+- **批量原子持久化与 I/O 降频**：新增 DataStore 单次事务批量更新，停用 SPA 频繁导航过程中的同步 `CookieManager.flush()` 磁盘阻塞。
+- **悬浮菜单一键提取表格链接**：在 FAB 悬浮菜单中新增「提取表格链接」按需查询工具，纯按需执行，不带来任何后台常驻开销。
+
+### 2. 🔄 应用内检测更新与多版本选择更新 (In-App Updates & Version Picker) (v1.0.12)
 - **智能检测最新版本**：内置 GitHub Releases API 通信模块，支持在【设置】界面手动点击「检查最新版本」或在悬浮球菜单中随时触发；支持开机/启动静默检测，检测到新版本主动弹出升级卡片。
 - **选择更新方式**：
   - **应用内直接下载安装**：调用系统 `DownloadManager` 高速下载并注册广播监听，下载完成后自动呼起 Android 系统应用安装器进行无缝覆盖升级。
@@ -85,8 +93,9 @@ A native and containerized Android client for remotely controlling **Google Anti
 
 | 版本 | 文件类型 | 说明 | 下载直链 |
 | :--- | :--- | :--- | :--- |
-| **v1.0.12** | **Release (正式版)** | 推荐使用，新增应用内自动/手动检测更新、版本选择器与多渠道下载升级、签名兼容 | [下载 app-release.apk](https://github.com/lublue147-netizen/antigravity-remote/releases/download/v1.0.12/app-release.apk) |
-| **v1.0.12** | **Debug (调试版)** | 包含调试日志输出 | [下载 app-debug.apk](https://github.com/lublue147-netizen/antigravity-remote/releases/download/v1.0.12/app-debug.apk) |
+| **v1.0.13** | **Release (正式版)** | 推荐使用，前台发热与耗电深度治理、60Hz锁频降温、消除DOM渲染死循环 | [下载 app-release.apk](https://github.com/lublue147-netizen/antigravity-remote/releases/download/v1.0.13/app-release.apk) |
+| **v1.0.13** | **Debug (调试版)** | 包含调试日志输出 | [下载 app-debug.apk](https://github.com/lublue147-netizen/antigravity-remote/releases/download/v1.0.13/app-debug.apk) |
+| **v1.0.12** | **Release (历史版)** | 应用内检测更新与版本选择器 | [下载 app-release.apk](https://github.com/lublue147-netizen/antigravity-remote/releases/download/v1.0.12/app-release.apk) |
 
 ---
 
