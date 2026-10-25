@@ -329,6 +329,93 @@ fun WebRemoteScreen(
                                 if (url != null && AccountUrlHelper.isPersistableAppUrl(url)) {
                                     viewModel.recordActiveUrl(url)
                                 }
+
+                                // Early injection of Clipboard API polyfill (bridges navigator.clipboard to native Android clipboard)
+                                val jsClipboardBridge = """
+                                    (function() {
+                                        function setupClipboardBridge() {
+                                            if (!window.AndroidLinkHelper) return;
+
+                                            var customReadText = function() {
+                                                return new Promise(function(resolve) {
+                                                    try {
+                                                        var t = window.AndroidLinkHelper.pasteFromClipboard ? window.AndroidLinkHelper.pasteFromClipboard() : '';
+                                                        resolve(t || '');
+                                                    } catch (_) {
+                                                        resolve('');
+                                                    }
+                                                });
+                                            };
+
+                                            var customWriteText = function(text) {
+                                                return new Promise(function(resolve) {
+                                                    try {
+                                                        if (window.AndroidLinkHelper && window.AndroidLinkHelper.copyToClipboard) {
+                                                            window.AndroidLinkHelper.copyToClipboard(String(text != null ? text : ''), '已复制到剪贴板');
+                                                        }
+                                                        resolve();
+                                                    } catch (_) {
+                                                        resolve();
+                                                    }
+                                                });
+                                            };
+
+                                            try {
+                                                if (navigator.clipboard) {
+                                                    navigator.clipboard.readText = customReadText;
+                                                    navigator.clipboard.writeText = customWriteText;
+                                                }
+                                            } catch (_) {}
+
+                                            try {
+                                                Object.defineProperty(navigator, 'clipboard', {
+                                                    value: {
+                                                        readText: customReadText,
+                                                        writeText: customWriteText
+                                                    },
+                                                    configurable: true,
+                                                    writable: true
+                                                });
+                                            } catch (_) {}
+                                        }
+
+                                        setupClipboardBridge();
+                                        if (document.readyState === 'loading') {
+                                            document.addEventListener('DOMContentLoaded', setupClipboardBridge);
+                                        }
+
+                                        window.__antigravityPasteText = function(text) {
+                                            if (!text) return false;
+                                            var active = document.activeElement;
+                                            if (!active || active === document.body || active === document.documentElement) {
+                                                active = document.querySelector('textarea, input:not([type="hidden"]), [contenteditable="true"], [role="textbox"], .monaco-editor textarea');
+                                                if (active) active.focus();
+                                            }
+                                            if (!active) return false;
+
+                                            if (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA') {
+                                                var start = active.selectionStart !== null ? active.selectionStart : active.value.length;
+                                                var end = active.selectionEnd !== null ? active.selectionEnd : active.value.length;
+                                                var val = active.value || '';
+                                                active.value = val.substring(0, start) + text + val.substring(end);
+                                                active.selectionStart = active.selectionEnd = start + text.length;
+                                                active.dispatchEvent(new Event('input', { bubbles: true }));
+                                                active.dispatchEvent(new Event('change', { bubbles: true }));
+                                                return true;
+                                            } else if (active.isContentEditable || active.getAttribute('role') === 'textbox') {
+                                                try {
+                                                    document.execCommand('insertText', false, text);
+                                                    return true;
+                                                } catch (_) {}
+                                                active.textContent = (active.textContent || '') + text;
+                                                active.dispatchEvent(new Event('input', { bubbles: true }));
+                                                return true;
+                                            }
+                                            return false;
+                                        };
+                                    })();
+                                """.trimIndent()
+                                view?.evaluateJavascript(jsClipboardBridge, null)
                             }
 
                             override fun onPageFinished(view: WebView?, url: String?) {
@@ -343,6 +430,60 @@ fun WebRemoteScreen(
                                         CookieManager.getInstance().flush()
                                     } catch (_: Exception) {}
                                 }
+
+                                // Re-apply clipboard bridge in case page reloaded or navigated via SPA
+                                val jsClipboardBridge = """
+                                    (function() {
+                                        function setupClipboardBridge() {
+                                            if (!window.AndroidLinkHelper) return;
+
+                                            var customReadText = function() {
+                                                return new Promise(function(resolve) {
+                                                    try {
+                                                        var t = window.AndroidLinkHelper.pasteFromClipboard ? window.AndroidLinkHelper.pasteFromClipboard() : '';
+                                                        resolve(t || '');
+                                                    } catch (_) {
+                                                        resolve('');
+                                                    }
+                                                });
+                                            };
+
+                                            var customWriteText = function(text) {
+                                                return new Promise(function(resolve) {
+                                                    try {
+                                                        if (window.AndroidLinkHelper && window.AndroidLinkHelper.copyToClipboard) {
+                                                            window.AndroidLinkHelper.copyToClipboard(String(text != null ? text : ''), '已复制到剪贴板');
+                                                        }
+                                                        resolve();
+                                                    } catch (_) {
+                                                        resolve();
+                                                    }
+                                                });
+                                            };
+
+                                            try {
+                                                if (navigator.clipboard) {
+                                                    navigator.clipboard.readText = customReadText;
+                                                    navigator.clipboard.writeText = customWriteText;
+                                                }
+                                            } catch (_) {}
+
+                                            try {
+                                                Object.defineProperty(navigator, 'clipboard', {
+                                                    value: {
+                                                        readText: customReadText,
+                                                        writeText: customWriteText
+                                                    },
+                                                    configurable: true,
+                                                    writable: true
+                                                });
+                                            } catch (_) {}
+                                        }
+
+                                        setupClipboardBridge();
+                                    })();
+                                """.trimIndent()
+                                view?.evaluateJavascript(jsClipboardBridge, null)
 
                                 // 1. Inject download hook for intercepting <a> click, blob:, data: links
                                 val jsDownloadHook = """
@@ -549,17 +690,30 @@ fun WebRemoteScreen(
                                                     z-index: 2147483647;
                                                     background: #1976d2;
                                                     color: #ffffff;
-                                                    font-size: 12px;
-                                                    font-weight: bold;
-                                                    padding: 6px 14px;
-                                                    border-radius: 18px;
-                                                    box-shadow: 0 4px 14px rgba(0,0,0,0.5);
-                                                    cursor: pointer;
+                                                    font-size: 13px;
+                                                    font-weight: 600;
+                                                    padding: 7px 15px;
+                                                    border-radius: 20px;
+                                                    box-shadow: 0 4px 16px rgba(0,0,0,0.6);
                                                     user-select: none;
                                                     -webkit-user-select: none;
                                                     display: inline-flex;
                                                     align-items: center;
+                                                    gap: 8px;
+                                                    pointer-events: auto;
+                                                }
+                                                .ag-bubble-item {
+                                                    cursor: pointer;
+                                                    display: inline-flex;
+                                                    align-items: center;
                                                     gap: 4px;
+                                                }
+                                                .ag-bubble-item:active {
+                                                    opacity: 0.7;
+                                                }
+                                                .ag-bubble-divider {
+                                                    opacity: 0.4;
+                                                    user-select: none;
                                                 }
                                             `;
                                             document.head.appendChild(style);
@@ -652,15 +806,29 @@ fun WebRemoteScreen(
                                             }
                                         }, true);
 
-                                        // Lazy toolbar attachment on user interaction (zero background scanning during streaming)
+                                        // Click delegation for table links: tap any link in a table to pop up link actions (copy text, copy URL)
                                         document.addEventListener('click', function(e) {
+                                            var a = e.target.closest ? e.target.closest('table a') : null;
+                                            if (a) {
+                                                var h = a.getAttribute('href') || a.href;
+                                                if (h && !h.startsWith('javascript:') && !h.startsWith('#') && h.indexOf('/u/') === -1 && h.indexOf('authuser=') === -1) {
+                                                    e.preventDefault();
+                                                    e.stopPropagation();
+                                                    var t = (a.textContent || '').trim();
+                                                    var u = a.href || h;
+                                                    if (window.AndroidLinkHelper) {
+                                                        window.AndroidLinkHelper.showLinkActions(u, t);
+                                                    }
+                                                    return;
+                                                }
+                                            }
                                             var table = e.target.closest ? e.target.closest('table') : null;
                                             if (table && !table.dataset.agToolbarAdded) {
                                                 ensureTableToolbar(table);
                                             }
                                         }, true);
 
-                                        // Selection bubble management
+                                        // Selection & Paste bubble management
                                         var selBubble = null;
                                         function removeSelBubble() {
                                             if (selBubble && selBubble.parentElement) {
@@ -669,48 +837,112 @@ fun WebRemoteScreen(
                                             }
                                         }
 
+                                        var selTimer = null;
                                         document.addEventListener('touchend', function() {
-                                            var sel = window.getSelection ? window.getSelection() : null;
-                                            if (!sel || sel.isCollapsed) {
+                                            if (selTimer) clearTimeout(selTimer);
+                                            selTimer = setTimeout(function() {
+                                                var sel = window.getSelection ? window.getSelection() : null;
+                                                var selectedText = sel && !sel.isCollapsed ? sel.toString().trim() : '';
+
+                                                var active = document.activeElement;
+                                                var isInput = active && (
+                                                    active.tagName === 'INPUT' || 
+                                                    active.tagName === 'TEXTAREA' || 
+                                                    active.isContentEditable || 
+                                                    active.getAttribute('role') === 'textbox'
+                                                );
+
+                                                if (!selectedText && isInput && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) {
+                                                    var start = active.selectionStart;
+                                                    var end = active.selectionEnd;
+                                                    if (start !== null && end !== null && end > start) {
+                                                        selectedText = (active.value || '').substring(start, end).trim();
+                                                    }
+                                                }
+
+                                                var hasClip = false;
+                                                try {
+                                                    hasClip = window.AndroidLinkHelper && window.AndroidLinkHelper.hasClipboardText && window.AndroidLinkHelper.hasClipboardText();
+                                                } catch (_) {}
+
+                                                if (!selectedText && (!isInput || !hasClip)) {
+                                                    removeSelBubble();
+                                                    return;
+                                                }
+
                                                 removeSelBubble();
-                                                return;
-                                            }
-                                            var selectedText = sel.toString().trim();
-                                            if (!selectedText) {
-                                                removeSelBubble();
-                                                return;
-                                            }
-                                            removeSelBubble();
-                                            try {
-                                                var range = sel.getRangeAt(0);
-                                                var rect = range.getBoundingClientRect();
-                                                if (rect.width === 0 && rect.height === 0) return;
+
+                                                var rect = null;
+                                                if (selectedText && sel && !sel.isCollapsed && sel.rangeCount > 0) {
+                                                    try {
+                                                        var range = sel.getRangeAt(0);
+                                                        rect = range.getBoundingClientRect();
+                                                    } catch (_) {}
+                                                }
+                                                if (!rect || (rect.width === 0 && rect.height === 0)) {
+                                                    if (isInput) {
+                                                        rect = active.getBoundingClientRect();
+                                                    }
+                                                }
+                                                if (!rect) return;
 
                                                 selBubble = document.createElement('div');
                                                 selBubble.className = 'ag-selection-bubble';
-                                                selBubble.textContent = '📋 复制所选文字';
-                                                selBubble.style.left = Math.max(10, Math.min(window.innerWidth - 150, rect.left + rect.width / 2 - 60)) + 'px';
-                                                selBubble.style.top = Math.max(10, rect.top - 42) + 'px';
 
-                                                selBubble.addEventListener('click', function(ev) {
-                                                    ev.preventDefault();
-                                                    ev.stopPropagation();
-                                                    if (window.AndroidLinkHelper) {
-                                                        window.AndroidLinkHelper.copyToClipboard(selectedText, '已复制所选文字');
+                                                if (selectedText) {
+                                                    var copyBtn = document.createElement('span');
+                                                    copyBtn.className = 'ag-bubble-item';
+                                                    copyBtn.textContent = '📋 复制所选文字';
+                                                    copyBtn.addEventListener('click', function(ev) {
+                                                        ev.preventDefault();
+                                                        ev.stopPropagation();
+                                                        if (window.AndroidLinkHelper) {
+                                                            window.AndroidLinkHelper.copyToClipboard(selectedText, '已复制所选文字');
+                                                        }
+                                                        if (sel && sel.removeAllRanges) sel.removeAllRanges();
+                                                        removeSelBubble();
+                                                    });
+                                                    selBubble.appendChild(copyBtn);
+                                                }
+
+                                                if (isInput && hasClip) {
+                                                    if (selectedText) {
+                                                        var divider = document.createElement('span');
+                                                        divider.className = 'ag-bubble-divider';
+                                                        divider.textContent = '|';
+                                                        selBubble.appendChild(divider);
                                                     }
-                                                    sel.removeAllRanges();
-                                                    removeSelBubble();
-                                                });
+                                                    var pasteBtn = document.createElement('span');
+                                                    pasteBtn.className = 'ag-bubble-item';
+                                                    pasteBtn.textContent = '📥 粘贴剪贴板';
+                                                    pasteBtn.addEventListener('click', function(ev) {
+                                                        ev.preventDefault();
+                                                        ev.stopPropagation();
+                                                        var clip = window.AndroidLinkHelper ? window.AndroidLinkHelper.pasteFromClipboard() : '';
+                                                        if (clip && window.__antigravityPasteText) {
+                                                            window.__antigravityPasteText(clip);
+                                                        }
+                                                        removeSelBubble();
+                                                    });
+                                                    selBubble.appendChild(pasteBtn);
+                                                }
 
+                                                selBubble.style.left = Math.max(10, Math.min(window.innerWidth - 180, rect.left + rect.width / 2 - 60)) + 'px';
+                                                selBubble.style.top = Math.max(10, rect.top - 46) + 'px';
                                                 document.body.appendChild(selBubble);
-                                            } catch (_) {}
+                                            }, 200);
                                         }, { passive: true });
 
                                         document.addEventListener('selectionchange', function() {
                                             if (selBubble) {
                                                 var sel = window.getSelection ? window.getSelection() : null;
                                                 if (!sel || sel.isCollapsed) {
-                                                    removeSelBubble();
+                                                    setTimeout(function() {
+                                                        var s = window.getSelection ? window.getSelection() : null;
+                                                        if (!s || s.isCollapsed) {
+                                                            removeSelBubble();
+                                                        }
+                                                    }, 300);
                                                 }
                                             }
                                         });
@@ -732,9 +964,6 @@ fun WebRemoteScreen(
                                                     clearTimeout(longPressTimer);
                                                     longPressTimer = setTimeout(function() {
                                                         if (currentTouchLink === target) {
-                                                            if (window.getSelection) {
-                                                                window.getSelection().removeAllRanges();
-                                                            }
                                                             var linkText = (target.textContent || '').trim();
                                                             var finalUrl = target.href || href;
                                                             if (window.AndroidLinkHelper) {
@@ -775,9 +1004,6 @@ fun WebRemoteScreen(
                                                 if (href && !href.startsWith('javascript:') && !href.startsWith('#')) {
                                                     e.preventDefault();
                                                     e.stopPropagation();
-                                                    if (window.getSelection) {
-                                                        window.getSelection().removeAllRanges();
-                                                    }
                                                     var linkText = (target.textContent || '').trim();
                                                     var finalUrl = target.href || href;
                                                     if (window.AndroidLinkHelper) {
@@ -1081,6 +1307,87 @@ fun WebRemoteScreen(
                         Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
                         Text("复制当前网址", modifier = Modifier.weight(1f))
+                    }
+
+                    // 2.6 复制所选文字
+                    TextButton(
+                        onClick = {
+                            showFabMenu = false
+                            val js = """
+                                (function() {
+                                    var sel = window.getSelection ? window.getSelection().toString() : '';
+                                    return sel;
+                                })();
+                            """.trimIndent()
+                            webViewInstance?.evaluateJavascript(js) { res ->
+                                try {
+                                    val text = if (res != null && res != "null" && res.isNotBlank()) {
+                                        org.json.JSONTokener(res).nextValue() as? String ?: res
+                                    } else ""
+                                    if (text.isNotBlank()) {
+                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                        clipboard.setPrimaryClip(ClipData.newPlainText("Copied Text", text))
+                                        Toast.makeText(context, "已复制所选文字", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        Toast.makeText(context, "未选中文本或当前区域不可选", Toast.LENGTH_SHORT).show()
+                                    }
+                                } catch (_: Exception) {
+                                    Toast.makeText(context, "复制失败", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("复制所选文字", modifier = Modifier.weight(1f))
+                    }
+
+                    // 2.7 粘贴剪贴板到输入框
+                    TextButton(
+                        onClick = {
+                            showFabMenu = false
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                            val clipText = if (clipboard?.hasPrimaryClip() == true && (clipboard.primaryClip?.itemCount ?: 0) > 0) {
+                                clipboard.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString() ?: ""
+                            } else ""
+                            if (clipText.isNotBlank()) {
+                                val escapedText = org.json.JSONObject.quote(clipText)
+                                val js = """
+                                    (function() {
+                                        if (window.__antigravityPasteText) {
+                                            return window.__antigravityPasteText($escapedText);
+                                        }
+                                        var activeEl = document.activeElement;
+                                        if (activeEl && (activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'INPUT')) {
+                                            var start = activeEl.selectionStart || 0;
+                                            var end = activeEl.selectionEnd || 0;
+                                            var val = activeEl.value || '';
+                                            activeEl.value = val.substring(0, start) + $escapedText + val.substring(end);
+                                            activeEl.selectionStart = activeEl.selectionEnd = start + $escapedText.length;
+                                            activeEl.dispatchEvent(new Event('input', { bubbles: true }));
+                                            activeEl.dispatchEvent(new Event('change', { bubbles: true }));
+                                            return true;
+                                        }
+                                        return false;
+                                    })();
+                                """.trimIndent()
+                                webViewInstance?.evaluateJavascript(js) { res ->
+                                    if (res == "true") {
+                                        Toast.makeText(context, "已粘贴到输入框", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        Toast.makeText(context, "未找到激活的输入框，请先聚焦输入框", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            } else {
+                                Toast.makeText(context, "系统剪贴板为空", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Filled.ContentPaste, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("粘贴到输入框", modifier = Modifier.weight(1f))
                     }
 
                     // 2.7 提取表格链接

@@ -2,7 +2,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Platform-Android-3DDC84?style=for-the-badge&logo=android&logoColor=white" />
-  <img src="https://img.shields.io/badge/Version-v1.0.13-blue?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Version-v1.0.14-blue?style=for-the-badge" />
   <img src="https://img.shields.io/badge/Language-Kotlin-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white" />
   <img src="https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4?style=for-the-badge&logo=jetpackcompose&logoColor=white" />
   <img src="https://img.shields.io/badge/Min%20SDK-26-brightgreen?style=for-the-badge" />
@@ -10,8 +10,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/lublue147-netizen/antigravity-remote/releases/download/v1.0.13/app-release.apk">
-    <img src="https://img.shields.io/badge/📥%20下载-最新%20v1.0.13%20Release%20APK-1A73E8?style=for-the-badge&logo=android&logoColor=white" />
+  <a href="https://github.com/lublue147-netizen/antigravity-remote/releases/download/v1.0.14/app-release.apk">
+    <img src="https://img.shields.io/badge/📥%20下载-最新%20v1.0.14%20Release%20APK-1A73E8?style=for-the-badge&logo=android&logoColor=white" />
   </a>
 </p>
 
@@ -23,7 +23,16 @@ A native and containerized Android client for remotely controlling **Google Anti
 
 ## 🌟 核心特性 (Features)
 
-### 1. 🔋 前台发热与耗电深度治理 (Foreground Thermal & Battery Optimization) (v1.0.13 重磅)
+### 1. 📋 剪贴板复制粘贴全链路修复与增强 (Clipboard Bridge & Smart Actions) (v1.0.14 重磅)
+- **异步剪贴板 API 原生桥接 (Navigator Clipboard Polyfill)**：突破 Android WebView 缺乏 `clipboard-read` 权限弹窗导致 `navigator.clipboard.readText()` 报错拒绝的限制；在 `onPageStarted` 与 `onPageFinished` 阶段注入原生 `ClipboardManager` 桥接，使 Monaco Editor、代码块复制按钮及网页内各类复制粘贴功能无缝运作。
+- **选区与输入双功能悬浮胶囊 (Smart Selection & Paste Bubble)**：
+  - 选中文本时，选区上方弹出「📋 复制所选文字」胶囊气泡，点按即拷；
+  - 聚焦输入框或富文本编辑器且系统剪贴板有内容时，浮动气泡自动呈现「📥 粘贴剪贴板」快捷按钮；
+  - 移除 touchstart/contextmenu 中误清选区的 `removeAllRanges()`，恢复 200ms 防抖等待选区稳定计算，避免气泡瞬闪消失。
+- **悬浮菜单 (FAB) 快捷按键兜底**：在半透明悬浮球菜单中新增「复制所选文字」与「粘贴到输入框」，直接穿透至当前激活元素或提示词输入框，提供 100% 稳定的复制粘贴保障。
+- **表格链接原生轻触直达**：点击表格内部任意超链接直接弹出原生菜单（复制链接文字、复制链接地址、外部浏览器打开），表格提取操作更流畅。
+
+### 2. 🔋 前台发热与耗电深度治理 (Foreground Thermal & Battery Optimization) (v1.0.13)
 - **根除 DOM Mutation 监听与侵入式重绘**：彻底移除后台轮询与 `MutationObserver` 按钮注入，改用零开销的原生事件委托（`Event Delegation`）拦截链接长按、双击与点击事件；消除 AI 流式输出打字时 Chromium 渲染引擎死循环，前台 CPU 占用归零。
 - **60Hz 动态锁频节电**：针对 Android 高刷屏（90Hz/120Hz/144Hz）显式将 Activity 刷新率限制在 60Hz，彻底解决因光标闪烁导致屏幕和 GPU 持续锁死在 120Hz 的高额耗电。
 - **消除 Monaco 编辑器与 xterm 终端重排干扰**：精简视口自适应规则为 `#root, #app, main` 顶层节点，全面隔离代码编辑器容器，杜绝键盘输入和代码滚动时的全页递归 Layout 计算。
