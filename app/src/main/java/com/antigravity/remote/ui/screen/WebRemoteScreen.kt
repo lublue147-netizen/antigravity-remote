@@ -404,38 +404,7 @@ fun WebRemoteScreen(
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
                 factory = { ctx ->
-                    object : WebView(ctx) {
-                        override fun onTextContextMenuItem(id: Int): Boolean {
-                            if (id == android.R.id.paste) {
-                                try {
-                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                                    val clipText = if (clipboard?.hasPrimaryClip() == true && (clipboard.primaryClip?.itemCount ?: 0) > 0) {
-                                        clipboard.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString() ?: ""
-                                    } else ""
-                                    if (clipText.isNotBlank()) {
-                                        val escaped = org.json.JSONObject.quote(clipText)
-                                        val checkAndPasteJs = """
-                                            (function() {
-                                                var active = document.activeElement;
-                                                var before = active ? (active.value !== undefined ? active.value : (active.textContent || '')) : '';
-                                                setTimeout(function() {
-                                                    var after = active ? (active.value !== undefined ? active.value : (active.textContent || '')) : '';
-                                                    if (after === before) {
-                                                        if (window.__antigravityPasteText) {
-                                                            window.__antigravityPasteText($escaped);
-                                                        }
-                                                    }
-                                                }, 120);
-                                            })();
-                                        """.trimIndent()
-                                        evaluateJavascript(checkAndPasteJs, null)
-                                    }
-                                } catch (_: Exception) {}
-                                return super.onTextContextMenuItem(id)
-                            }
-                            return super.onTextContextMenuItem(id)
-                        }
-                    }.apply {
+                    WebView(ctx).apply {
                         layoutParams = ViewGroup.LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT,
                             ViewGroup.LayoutParams.MATCH_PARENT
