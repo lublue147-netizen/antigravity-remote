@@ -67,6 +67,180 @@ data class TableLinksGroup(
     val links: List<TableLinkItem>
 )
 
+private fun buildClipboardBridgeScript(): String {
+    return """
+        (function() {
+            function setupClipboardBridge() {
+                if (!window.AndroidLinkHelper) return;
+
+                var customReadText = function() {
+                    return new Promise(function(resolve) {
+                        try {
+                            var t = window.AndroidLinkHelper.pasteFromClipboard ? window.AndroidLinkHelper.pasteFromClipboard() : '';
+                            resolve(t || '');
+                        } catch (_) {
+                            resolve('');
+                        }
+                    });
+                };
+
+                var customWriteText = function(text) {
+                    return new Promise(function(resolve) {
+                        try {
+                            if (window.AndroidLinkHelper && window.AndroidLinkHelper.copyToClipboard) {
+                                window.AndroidLinkHelper.copyToClipboard(String(text != null ? text : ''), '已复制到剪贴板');
+                            }
+                            resolve();
+                        } catch (_) {
+                            resolve();
+                        }
+                    });
+                };
+
+                var customRead = function() {
+                    return customReadText().then(function(t) {
+                        if (window.ClipboardItem) {
+                            var blob = new Blob([t || ''], { type: 'text/plain' });
+                            return [new ClipboardItem({ 'text/plain': blob })];
+                        }
+                        return [];
+                    }).catch(function() {
+                        return [];
+                    });
+                };
+
+                var customWrite = function(items) {
+                    return new Promise(function(resolve) {
+                        try {
+                            if (items && items.length > 0 && items[0].getType) {
+                                items[0].getType('text/plain').then(function(b) {
+                                    return b.text();
+                                }).then(function(s) {
+                                    customWriteText(s);
+                                    resolve();
+                                }).catch(function() {
+                                    resolve();
+                                });
+                                return;
+                            }
+                            resolve();
+                        } catch (_) {
+                            resolve();
+                        }
+                    });
+                };
+
+                try {
+                    if (navigator.clipboard) {
+                        navigator.clipboard.readText = customReadText;
+                        navigator.clipboard.writeText = customWriteText;
+                        navigator.clipboard.read = customRead;
+                        navigator.clipboard.write = customWrite;
+                    }
+                } catch (_) {}
+
+                try {
+                    Object.defineProperty(navigator, 'clipboard', {
+                        value: {
+                            readText: customReadText,
+                            writeText: customWriteText,
+                            read: customRead,
+                            write: customWrite
+                        },
+                        configurable: true,
+                        writable: true
+                    });
+                } catch (_) {}
+            }
+
+            setupClipboardBridge();
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', setupClipboardBridge);
+            }
+
+            // Universal paste function piercing React controlled components, Monaco editor, and textareas
+            window.__antigravityPasteText = function(text) {
+                if (!text) return false;
+                var active = document.activeElement;
+                if (!active || active === document.body || active === document.documentElement) {
+                    active = document.querySelector('textarea:not([disabled]), input:not([type="hidden"]):not([disabled]), [contenteditable="true"], [role="textbox"], .monaco-editor textarea');
+                    if (active) active.focus();
+                }
+                if (!active) return false;
+
+                // 1. Try native Chromium editing command first (handles undo/redo and triggers native framework listeners)
+                try {
+                    var prevVal = active.value !== undefined ? active.value : (active.textContent || '');
+                    var ok = document.execCommand('insertText', false, text);
+                    var afterVal = active.value !== undefined ? active.value : (active.textContent || '');
+                    if (ok && afterVal !== prevVal) {
+                        active.dispatchEvent(new Event('input', { bubbles: true }));
+                        active.dispatchEvent(new Event('change', { bubbles: true }));
+                        return true;
+                    }
+                } catch (_) {}
+
+                // 2. Fallback for INPUT and TEXTAREA (including React 16+ controlled input prototype descriptor setter)
+                if (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA') {
+                    var start = active.selectionStart !== null ? active.selectionStart : active.value.length;
+                    var end = active.selectionEnd !== null ? active.selectionEnd : active.value.length;
+                    var val = active.value || '';
+                    var newVal = val.substring(0, start) + text + val.substring(end);
+                    
+                    var proto = Object.getPrototypeOf(active);
+                    var desc = Object.getOwnPropertyDescriptor(proto, 'value') || 
+                               Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value') || 
+                               Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
+                    if (desc && desc.set) {
+                        desc.set.call(active, newVal);
+                    } else {
+                        active.value = newVal;
+                    }
+                    active.selectionStart = active.selectionEnd = start + text.length;
+                    active.dispatchEvent(new Event('input', { bubbles: true }));
+                    active.dispatchEvent(new Event('change', { bubbles: true }));
+                    return true;
+                } else if (active.isContentEditable || (active.getAttribute && active.getAttribute('role') === 'textbox')) {
+                    active.textContent = (active.textContent || '') + text;
+                    active.dispatchEvent(new Event('input', { bubbles: true }));
+                    return true;
+                }
+                return false;
+            };
+
+            // Capture-phase paste listener: if page swallows native Android paste on Windows instance, inject after 60ms
+            if (!window.__antigravityPasteCaptureHooked) {
+                window.__antigravityPasteCaptureHooked = true;
+                document.addEventListener('paste', function(e) {
+                    var target = e.target;
+                    if (!target) return;
+                    var isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable || (target.getAttribute && target.getAttribute('role') === 'textbox');
+                    if (!isInput) return;
+
+                    var text = '';
+                    if (e.clipboardData) {
+                        try { text = e.clipboardData.getData('text/plain'); } catch (_) {}
+                    }
+                    if (!text && window.AndroidLinkHelper && window.AndroidLinkHelper.pasteFromClipboard) {
+                        try { text = window.AndroidLinkHelper.pasteFromClipboard(); } catch (_) {}
+                    }
+                    if (!text) return;
+
+                    var beforeVal = target.value !== undefined ? target.value : (target.textContent || '');
+                    setTimeout(function() {
+                        var afterVal = target.value !== undefined ? target.value : (target.textContent || '');
+                        if (afterVal === beforeVal) {
+                            if (window.__antigravityPasteText) {
+                                window.__antigravityPasteText(text);
+                            }
+                        }
+                    }, 60);
+                }, true);
+            }
+        })();
+    """.trimIndent()
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -230,7 +404,38 @@ fun WebRemoteScreen(
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
                 factory = { ctx ->
-                    WebView(ctx).apply {
+                    object : WebView(ctx) {
+                        override fun onTextContextMenuItem(id: Int): Boolean {
+                            if (id == android.R.id.paste) {
+                                try {
+                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                                    val clipText = if (clipboard?.hasPrimaryClip() == true && (clipboard.primaryClip?.itemCount ?: 0) > 0) {
+                                        clipboard.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString() ?: ""
+                                    } else ""
+                                    if (clipText.isNotBlank()) {
+                                        val escaped = org.json.JSONObject.quote(clipText)
+                                        val checkAndPasteJs = """
+                                            (function() {
+                                                var active = document.activeElement;
+                                                var before = active ? (active.value !== undefined ? active.value : (active.textContent || '')) : '';
+                                                setTimeout(function() {
+                                                    var after = active ? (active.value !== undefined ? active.value : (active.textContent || '')) : '';
+                                                    if (after === before) {
+                                                        if (window.__antigravityPasteText) {
+                                                            window.__antigravityPasteText($escaped);
+                                                        }
+                                                    }
+                                                }, 120);
+                                            })();
+                                        """.trimIndent()
+                                        evaluateJavascript(checkAndPasteJs, null)
+                                    }
+                                } catch (_: Exception) {}
+                                return super.onTextContextMenuItem(id)
+                            }
+                            return super.onTextContextMenuItem(id)
+                        }
+                    }.apply {
                         layoutParams = ViewGroup.LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT,
                             ViewGroup.LayoutParams.MATCH_PARENT
@@ -331,91 +536,7 @@ fun WebRemoteScreen(
                                 }
 
                                 // Early injection of Clipboard API polyfill (bridges navigator.clipboard to native Android clipboard)
-                                val jsClipboardBridge = """
-                                    (function() {
-                                        function setupClipboardBridge() {
-                                            if (!window.AndroidLinkHelper) return;
-
-                                            var customReadText = function() {
-                                                return new Promise(function(resolve) {
-                                                    try {
-                                                        var t = window.AndroidLinkHelper.pasteFromClipboard ? window.AndroidLinkHelper.pasteFromClipboard() : '';
-                                                        resolve(t || '');
-                                                    } catch (_) {
-                                                        resolve('');
-                                                    }
-                                                });
-                                            };
-
-                                            var customWriteText = function(text) {
-                                                return new Promise(function(resolve) {
-                                                    try {
-                                                        if (window.AndroidLinkHelper && window.AndroidLinkHelper.copyToClipboard) {
-                                                            window.AndroidLinkHelper.copyToClipboard(String(text != null ? text : ''), '已复制到剪贴板');
-                                                        }
-                                                        resolve();
-                                                    } catch (_) {
-                                                        resolve();
-                                                    }
-                                                });
-                                            };
-
-                                            try {
-                                                if (navigator.clipboard) {
-                                                    navigator.clipboard.readText = customReadText;
-                                                    navigator.clipboard.writeText = customWriteText;
-                                                }
-                                            } catch (_) {}
-
-                                            try {
-                                                Object.defineProperty(navigator, 'clipboard', {
-                                                    value: {
-                                                        readText: customReadText,
-                                                        writeText: customWriteText
-                                                    },
-                                                    configurable: true,
-                                                    writable: true
-                                                });
-                                            } catch (_) {}
-                                        }
-
-                                        setupClipboardBridge();
-                                        if (document.readyState === 'loading') {
-                                            document.addEventListener('DOMContentLoaded', setupClipboardBridge);
-                                        }
-
-                                        window.__antigravityPasteText = function(text) {
-                                            if (!text) return false;
-                                            var active = document.activeElement;
-                                            if (!active || active === document.body || active === document.documentElement) {
-                                                active = document.querySelector('textarea, input:not([type="hidden"]), [contenteditable="true"], [role="textbox"], .monaco-editor textarea');
-                                                if (active) active.focus();
-                                            }
-                                            if (!active) return false;
-
-                                            if (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA') {
-                                                var start = active.selectionStart !== null ? active.selectionStart : active.value.length;
-                                                var end = active.selectionEnd !== null ? active.selectionEnd : active.value.length;
-                                                var val = active.value || '';
-                                                active.value = val.substring(0, start) + text + val.substring(end);
-                                                active.selectionStart = active.selectionEnd = start + text.length;
-                                                active.dispatchEvent(new Event('input', { bubbles: true }));
-                                                active.dispatchEvent(new Event('change', { bubbles: true }));
-                                                return true;
-                                            } else if (active.isContentEditable || active.getAttribute('role') === 'textbox') {
-                                                try {
-                                                    document.execCommand('insertText', false, text);
-                                                    return true;
-                                                } catch (_) {}
-                                                active.textContent = (active.textContent || '') + text;
-                                                active.dispatchEvent(new Event('input', { bubbles: true }));
-                                                return true;
-                                            }
-                                            return false;
-                                        };
-                                    })();
-                                """.trimIndent()
-                                view?.evaluateJavascript(jsClipboardBridge, null)
+                                view?.evaluateJavascript(buildClipboardBridgeScript(), null)
                             }
 
                             override fun onPageFinished(view: WebView?, url: String?) {
@@ -432,58 +553,7 @@ fun WebRemoteScreen(
                                 }
 
                                 // Re-apply clipboard bridge in case page reloaded or navigated via SPA
-                                val jsClipboardBridge = """
-                                    (function() {
-                                        function setupClipboardBridge() {
-                                            if (!window.AndroidLinkHelper) return;
-
-                                            var customReadText = function() {
-                                                return new Promise(function(resolve) {
-                                                    try {
-                                                        var t = window.AndroidLinkHelper.pasteFromClipboard ? window.AndroidLinkHelper.pasteFromClipboard() : '';
-                                                        resolve(t || '');
-                                                    } catch (_) {
-                                                        resolve('');
-                                                    }
-                                                });
-                                            };
-
-                                            var customWriteText = function(text) {
-                                                return new Promise(function(resolve) {
-                                                    try {
-                                                        if (window.AndroidLinkHelper && window.AndroidLinkHelper.copyToClipboard) {
-                                                            window.AndroidLinkHelper.copyToClipboard(String(text != null ? text : ''), '已复制到剪贴板');
-                                                        }
-                                                        resolve();
-                                                    } catch (_) {
-                                                        resolve();
-                                                    }
-                                                });
-                                            };
-
-                                            try {
-                                                if (navigator.clipboard) {
-                                                    navigator.clipboard.readText = customReadText;
-                                                    navigator.clipboard.writeText = customWriteText;
-                                                }
-                                            } catch (_) {}
-
-                                            try {
-                                                Object.defineProperty(navigator, 'clipboard', {
-                                                    value: {
-                                                        readText: customReadText,
-                                                        writeText: customWriteText
-                                                    },
-                                                    configurable: true,
-                                                    writable: true
-                                                });
-                                            } catch (_) {}
-                                        }
-
-                                        setupClipboardBridge();
-                                    })();
-                                """.trimIndent()
-                                view?.evaluateJavascript(jsClipboardBridge, null)
+                                view?.evaluateJavascript(buildClipboardBridgeScript(), null)
 
                                 // 1. Inject download hook for intercepting <a> click, blob:, data: links
                                 val jsDownloadHook = """

@@ -2,7 +2,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Platform-Android-3DDC84?style=for-the-badge&logo=android&logoColor=white" />
-  <img src="https://img.shields.io/badge/Version-v1.0.14-blue?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Version-v1.0.15-blue?style=for-the-badge" />
   <img src="https://img.shields.io/badge/Language-Kotlin-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white" />
   <img src="https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4?style=for-the-badge&logo=jetpackcompose&logoColor=white" />
   <img src="https://img.shields.io/badge/Min%20SDK-26-brightgreen?style=for-the-badge" />
@@ -10,8 +10,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/lublue147-netizen/antigravity-remote/releases/download/v1.0.14/app-release.apk">
-    <img src="https://img.shields.io/badge/📥%20下载-最新%20v1.0.14%20Release%20APK-1A73E8?style=for-the-badge&logo=android&logoColor=white" />
+  <a href="https://github.com/lublue147-netizen/antigravity-remote/releases/download/v1.0.15/app-release.apk">
+    <img src="https://img.shields.io/badge/📥%20下载-最新%20v1.0.15%20Release%20APK-1A73E8?style=for-the-badge&logo=android&logoColor=white" />
   </a>
 </p>
 
@@ -23,7 +23,13 @@ A native and containerized Android client for remotely controlling **Google Anti
 
 ## 🌟 核心特性 (Features)
 
-### 1. 📋 剪贴板复制粘贴全链路修复与增强 (Clipboard Bridge & Smart Actions) (v1.0.14 重磅)
+### 1. 🪟 Windows / Linux 双平台远程实例剪贴板与原生粘贴终极兼容 (v1.0.15 重磅)
+- **原生上下文菜单长按粘贴保底拦截 (Native Context Menu Interceptor)**：重写 `WebView.onTextContextMenuItem(android.R.id.paste)`，在用户通过系统长按浮窗选择「粘贴」后执行 120ms 状态检测。若 Windows 实例因 Remote Clipboard Provider 劫持或 `preventDefault` 吞没粘贴事件，系统自动无缝补发通用文本穿透注入，彻底根治 Windows 远程实例下主对话输入框长按粘贴无响应的痼疾。
+- **DOM Capture 捕获阶段防吞监听器**：在 DOM 最顶层 `paste` 事件捕获阶段进行监听，即便前端框架或远端服务尝试阻止默认行为，也能感知并在内容未变动时将手机剪贴板内容精准填入。
+- **React 16+ 受控组件 Prototype Setter 穿透**：通过调用 `HTMLTextAreaElement.prototype` 原始 setter 与 `document.execCommand('insertText')`，突破 React 虚拟 DOM 状态追踪限制，输入后立即触发 `input` 与 `change` 事件，确保发送按钮立即激活且撤销/重做栈完整保留。
+- **完整 Clipboard API 规范模拟**：补齐 `navigator.clipboard.read()`（返回 `ClipboardItem`）与 `navigator.clipboard.write()`，完美适配 Antigravity 多模态截图与文件粘贴检测逻辑。
+
+### 2. 📋 剪贴板复制粘贴全链路修复与增强 (Clipboard Bridge & Smart Actions) (v1.0.14)
 - **异步剪贴板 API 原生桥接 (Navigator Clipboard Polyfill)**：突破 Android WebView 缺乏 `clipboard-read` 权限弹窗导致 `navigator.clipboard.readText()` 报错拒绝的限制；在 `onPageStarted` 与 `onPageFinished` 阶段注入原生 `ClipboardManager` 桥接，使 Monaco Editor、代码块复制按钮及网页内各类复制粘贴功能无缝运作。
 - **选区与输入双功能悬浮胶囊 (Smart Selection & Paste Bubble)**：
   - 选中文本时，选区上方弹出「📋 复制所选文字」胶囊气泡，点按即拷；
