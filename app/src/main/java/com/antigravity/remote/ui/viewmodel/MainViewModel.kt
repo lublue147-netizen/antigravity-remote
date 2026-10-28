@@ -30,16 +30,16 @@ class MainViewModel @Inject constructor(
         viewModelScope, SharingStarted.WhileSubscribed(5000), ""
     )
     val webRemoteUrl = settingsDataStore.webRemoteUrl.stateIn(
-        viewModelScope, SharingStarted.WhileSubscribed(5000), "https://antigravity.google.com"
+        viewModelScope, SharingStarted.Eagerly, "https://antigravity.google.com"
     )
     val lastActiveUrl = settingsDataStore.lastActiveUrl.stateIn(
-        viewModelScope, SharingStarted.WhileSubscribed(5000), ""
+        viewModelScope, SharingStarted.Eagerly, ""
     )
     val lastAccountIndex = settingsDataStore.lastAccountIndex.stateIn(
-        viewModelScope, SharingStarted.WhileSubscribed(5000), 0
+        viewModelScope, SharingStarted.Eagerly, 0
     )
     val autoRestoreAccount = settingsDataStore.autoRestoreAccount.stateIn(
-        viewModelScope, SharingStarted.WhileSubscribed(5000), true
+        viewModelScope, SharingStarted.Eagerly, true
     )
     val authToken = settingsDataStore.authToken.stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5000), ""
@@ -143,14 +143,14 @@ class MainViewModel @Inject constructor(
     fun recordActiveUrl(url: String) {
         if (!AccountUrlHelper.isPersistableAppUrl(url)) return
         val cleanUrl = url.trim()
-        if (cleanUrl == lastActiveUrl.value) return
+        if (cleanUrl == lastActiveUrl.value && cleanUrl == webRemoteUrl.value) return
         viewModelScope.launch {
             val detectedIndex = AccountUrlHelper.extractAccountIndex(cleanUrl)
             val indexToUpdate = if (detectedIndex != null && detectedIndex != lastAccountIndex.value) detectedIndex else null
             settingsDataStore.updateActiveSession(
                 activeUrl = cleanUrl,
                 accountIndex = indexToUpdate,
-                syncWebRemoteUrl = false
+                syncWebRemoteUrl = true
             )
         }
     }

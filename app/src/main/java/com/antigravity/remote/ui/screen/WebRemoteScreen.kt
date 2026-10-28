@@ -250,6 +250,7 @@ fun WebRemoteScreen(
 ) {
     val isSettingsLoaded by viewModel.isSettingsLoaded.collectAsState()
     val webRemoteUrl by viewModel.webRemoteUrl.collectAsState()
+    val lastActiveUrl by viewModel.lastActiveUrl.collectAsState()
     val lastAccountIndex by viewModel.lastAccountIndex.collectAsState()
     val autoRestoreAccount by viewModel.autoRestoreAccount.collectAsState()
     val immersiveMode by viewModel.immersiveMode.collectAsState()
@@ -258,7 +259,7 @@ fun WebRemoteScreen(
 
     var webViewInstance by remember { mutableStateOf<WebView?>(null) }
 
-    fun getCurrentActiveUrl(): String = webViewInstance?.url ?: viewModel.lastActiveUrl.value.ifBlank { webRemoteUrl }
+    fun getCurrentActiveUrl(): String = webViewInstance?.url ?: lastActiveUrl.ifBlank { viewModel.lastActiveUrl.value }.ifBlank { webRemoteUrl }
     var canGoBack by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
     var progress by remember { mutableFloatStateOf(0f) }
@@ -302,8 +303,26 @@ fun WebRemoteScreen(
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_PAUSE -> {
+                    webViewInstance?.url?.let { currentUrl ->
+                        if (AccountUrlHelper.isPersistableAppUrl(currentUrl)) {
+                            viewModel.recordActiveUrl(currentUrl)
+                        }
+                    }
+                    try {
+                        CookieManager.getInstance().flush()
+                    } catch (_: Exception) {}
                     webViewInstance?.onPause()
                     webViewInstance?.pauseTimers()
+                }
+                Lifecycle.Event.ON_STOP -> {
+                    webViewInstance?.url?.let { currentUrl ->
+                        if (AccountUrlHelper.isPersistableAppUrl(currentUrl)) {
+                            viewModel.recordActiveUrl(currentUrl)
+                        }
+                    }
+                    try {
+                        CookieManager.getInstance().flush()
+                    } catch (_: Exception) {}
                 }
                 Lifecycle.Event.ON_RESUME -> {
                     webViewInstance?.onResume()
@@ -1221,11 +1240,13 @@ fun WebRemoteScreen(
                             }
                         }
 
-                        // Determine the startup URL: restore last used account URL directly on cold start
+                        // Determine the startup URL: restore last used session/account URL directly on cold start
                         val initialUrl = if (autoRestoreAccount) {
-                            val activeUrl = viewModel.lastActiveUrl.value
+                            val activeUrl = lastActiveUrl.ifBlank { viewModel.lastActiveUrl.value }
                             if (activeUrl.isNotBlank() && AccountUrlHelper.isPersistableAppUrl(activeUrl)) {
                                 activeUrl
+                            } else if (webRemoteUrl.isNotBlank() && AccountUrlHelper.isPersistableAppUrl(webRemoteUrl)) {
+                                webRemoteUrl
                             } else if (lastAccountIndex > 0 && webRemoteUrl.isNotBlank()) {
                                 AccountUrlHelper.buildAccountUrl(webRemoteUrl, lastAccountIndex)
                             } else if (webRemoteUrl.isNotBlank()) {

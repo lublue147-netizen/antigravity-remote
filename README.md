@@ -2,7 +2,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Platform-Android-3DDC84?style=for-the-badge&logo=android&logoColor=white" />
-  <img src="https://img.shields.io/badge/Version-v1.0.15-blue?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Version-v1.0.16-blue?style=for-the-badge" />
   <img src="https://img.shields.io/badge/Language-Kotlin-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white" />
   <img src="https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4?style=for-the-badge&logo=jetpackcompose&logoColor=white" />
   <img src="https://img.shields.io/badge/Min%20SDK-26-brightgreen?style=for-the-badge" />
@@ -10,8 +10,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/lublue147-netizen/antigravity-remote/releases/download/v1.0.15/app-release.apk">
-    <img src="https://img.shields.io/badge/📥%20下载-最新%20v1.0.15%20Release%20APK-1A73E8?style=for-the-badge&logo=android&logoColor=white" />
+  <a href="https://github.com/lublue147-netizen/antigravity-remote/releases/download/v1.0.16/app-release.apk">
+    <img src="https://img.shields.io/badge/📥%20下载-最新%20v1.0.16%20Release%20APK-1A73E8?style=for-the-badge&logo=android&logoColor=white" />
   </a>
 </p>
 
@@ -23,13 +23,19 @@ A native and containerized Android client for remotely controlling **Google Anti
 
 ## 🌟 核心特性 (Features)
 
-### 1. 🪟 Windows / Linux 双平台远程实例剪贴板与原生粘贴终极兼容 (v1.0.15 重磅)
-- **原生上下文菜单长按粘贴保底拦截 (Native Context Menu Interceptor)**：重写 `WebView.onTextContextMenuItem(android.R.id.paste)`，在用户通过系统长按浮窗选择「粘贴」后执行 120ms 状态检测。若 Windows 实例因 Remote Clipboard Provider 劫持或 `preventDefault` 吞没粘贴事件，系统自动无缝补发通用文本穿透注入，彻底根治 Windows 远程实例下主对话输入框长按粘贴无响应的痼疾。
+### 1. 🔄 退出冷启动会话完整恢复与持久化修复 (Session Resume & State Flow Optimization) (v1.0.16 重磅)
+- **恢复 StateFlow 预加载 (Eager StateFlow Initialization)**：将 `lastActiveUrl`、`webRemoteUrl`、`lastAccountIndex`、`autoRestoreAccount` 调整为 `SharingStarted.Eagerly`，彻底消除 `WhileSubscribed` 在缺乏订阅者时因不启动 Flow 导致的内存冷启动 URL 永久落空问题。
+- **Compose 状态全链路收集**：在 `WebRemoteScreen` 中补齐 `lastActiveUrl` 的 `collectAsState()`，并在计算启动 `initialUrl` 时优先使用当前会话 URL（`/r/...`），杜绝因读取空状态导致回退到根主页。
+- **双重持久化同步与原子事务更新**：在 `recordActiveUrl` 中恢复 `webRemoteUrl` 与 `lastActiveUrl` 的实时同步，利用 DataStore 单次事务批量更新，兼顾 I/O 性能与状态一致性。
+- **全生命周期退出落盘保障 (ON_PAUSE & ON_STOP Persistence)**：在 `ON_PAUSE` 与 `ON_STOP` 生命周期回调中自动抓取当前 WebView 激活会话并写入 DataStore 且同步执行 `CookieManager.flush()`，彻底解决从最近任务滑动杀死或后台清理时会话丢失的问题。
+
+### 2. 🪟 Windows / Linux 双平台远程实例剪贴板与原生粘贴终极兼容 (v1.0.15)
+- **全场景防吞监听与粘贴注入 (Paste Bridge & Fallback Interceptor)**：针对 Windows 远程实例下主对话输入框长按粘贴无响应的痼疾，在 DOM 捕获阶段拦截并监听 `paste` 事件，并在 120ms 内检测输入框内容变动；若远端剪贴板劫持或阻止默认行为，系统自动无缝补发通用文本穿透注入，彻底根治 Windows 远程实例下主对话输入框长按选择「粘贴」无响应的痼疾。
 - **DOM Capture 捕获阶段防吞监听器**：在 DOM 最顶层 `paste` 事件捕获阶段进行监听，即便前端框架或远端服务尝试阻止默认行为，也能感知并在内容未变动时将手机剪贴板内容精准填入。
 - **React 16+ 受控组件 Prototype Setter 穿透**：通过调用 `HTMLTextAreaElement.prototype` 原始 setter 与 `document.execCommand('insertText')`，突破 React 虚拟 DOM 状态追踪限制，输入后立即触发 `input` 与 `change` 事件，确保发送按钮立即激活且撤销/重做栈完整保留。
 - **完整 Clipboard API 规范模拟**：补齐 `navigator.clipboard.read()`（返回 `ClipboardItem`）与 `navigator.clipboard.write()`，完美适配 Antigravity 多模态截图与文件粘贴检测逻辑。
 
-### 2. 📋 剪贴板复制粘贴全链路修复与增强 (Clipboard Bridge & Smart Actions) (v1.0.14)
+### 3. 📋 剪贴板复制粘贴全链路修复与增强 (Clipboard Bridge & Smart Actions) (v1.0.14)
 - **异步剪贴板 API 原生桥接 (Navigator Clipboard Polyfill)**：突破 Android WebView 缺乏 `clipboard-read` 权限弹窗导致 `navigator.clipboard.readText()` 报错拒绝的限制；在 `onPageStarted` 与 `onPageFinished` 阶段注入原生 `ClipboardManager` 桥接，使 Monaco Editor、代码块复制按钮及网页内各类复制粘贴功能无缝运作。
 - **选区与输入双功能悬浮胶囊 (Smart Selection & Paste Bubble)**：
   - 选中文本时，选区上方弹出「📋 复制所选文字」胶囊气泡，点按即拷；
@@ -38,7 +44,7 @@ A native and containerized Android client for remotely controlling **Google Anti
 - **悬浮菜单 (FAB) 快捷按键兜底**：在半透明悬浮球菜单中新增「复制所选文字」与「粘贴到输入框」，直接穿透至当前激活元素或提示词输入框，提供 100% 稳定的复制粘贴保障。
 - **表格链接原生轻触直达**：点击表格内部任意超链接直接弹出原生菜单（复制链接文字、复制链接地址、外部浏览器打开），表格提取操作更流畅。
 
-### 2. 🔋 前台发热与耗电深度治理 (Foreground Thermal & Battery Optimization) (v1.0.13)
+### 4. 🔋 前台发热与耗电深度治理 (Foreground Thermal & Battery Optimization) (v1.0.13)
 - **根除 DOM Mutation 监听与侵入式重绘**：彻底移除后台轮询与 `MutationObserver` 按钮注入，改用零开销的原生事件委托（`Event Delegation`）拦截链接长按、双击与点击事件；消除 AI 流式输出打字时 Chromium 渲染引擎死循环，前台 CPU 占用归零。
 - **60Hz 动态锁频节电**：针对 Android 高刷屏（90Hz/120Hz/144Hz）显式将 Activity 刷新率限制在 60Hz，彻底解决因光标闪烁导致屏幕和 GPU 持续锁死在 120Hz 的高额耗电。
 - **消除 Monaco 编辑器与 xterm 终端重排干扰**：精简视口自适应规则为 `#root, #app, main` 顶层节点，全面隔离代码编辑器容器，杜绝键盘输入和代码滚动时的全页递归 Layout 计算。
@@ -46,7 +52,7 @@ A native and containerized Android client for remotely controlling **Google Anti
 - **批量原子持久化与 I/O 降频**：新增 DataStore 单次事务批量更新，停用 SPA 频繁导航过程中的同步 `CookieManager.flush()` 磁盘阻塞。
 - **悬浮菜单一键提取表格链接**：在 FAB 悬浮菜单中新增「提取表格链接」按需查询工具，纯按需执行，不带来任何后台常驻开销。
 
-### 2. 🔄 应用内检测更新与多版本选择更新 (In-App Updates & Version Picker) (v1.0.12)
+### 5. 🔄 应用内检测更新与多版本选择更新 (In-App Updates & Version Picker) (v1.0.12)
 - **智能检测最新版本**：内置 GitHub Releases API 通信模块，支持在【设置】界面手动点击「检查最新版本」或在悬浮球菜单中随时触发；支持开机/启动静默检测，检测到新版本主动弹出升级卡片。
 - **选择更新方式**：
   - **应用内直接下载安装**：调用系统 `DownloadManager` 高速下载并注册广播监听，下载完成后自动呼起 Android 系统应用安装器进行无缝覆盖升级。
@@ -55,7 +61,7 @@ A native and containerized Android client for remotely controlling **Google Anti
 - **多版本自由选择更新 (Version Picker)**：提供「选择版本更新」面板，实时拉取并展示 GitHub 所有历史发布版本（包含版本号、发布日期、体积大小及当前安装状态），支持自由查看任一版本的更新日志并选择安装该版本。
 - **配置持久化**：支持自由开关「启动时自动检查更新」，首选项实时存储于 DataStore。
 
-### 2. 🌐 官方网页版全屏沉浸容器 (Web Remote Container)
+### 6. 🌐 官方网页版全屏沉浸容器 (Web Remote Container)
 - **全面发热与续航功耗优化 (v1.0.11 重磅)**：
   - **MutationObserver 节流防抖与递归自变动过滤**：为 DOM 监听器增加 350ms 防抖节流，内部变动打标隔离，跳过自身插入的工具栏/按钮节点，彻底根除高频流式输出与连续 DOM 变动引发的强制重排（Forced Reflow）与 CPU 满载发烫。
   - **单元格状态标记跳过 (Cell Caching)**：为已处理的单元格添加 `data-ag-linkified` 缓存标记，增量式扫描未处理单元格，大幅缩短单次扫描耗时。
@@ -90,13 +96,13 @@ A native and containerized Android client for remotely controlling **Google Anti
 - **Google OAuth 登录兼容**：内置持久化 Cookie 管理，模拟 Chrome Mobile UA 并剥离 WebView 阻断标识，无缝支持 Google 账号授权登录。
 - **全手势与悬浮菜单**：支持系统边缘侧滑返回、硬件返回键后退，并配备半透明快捷悬浮球（刷新、后退、复制当前网址、切换账号、修改链接、切换模式），打字时智能自动隐藏。
 
-### 2. ⚡ 原生 WebSocket 控制面板 (Native Dashboard)
+### 7. ⚡ 原生 WebSocket 控制面板 (Native Dashboard)
 - **实时会话流**：通过 WebSocket 与 Antigravity 后端服务双向通信，实时推送 Agent 状态与消息流。
 - **支持文本划词复制**：原生集成 SelectionContainer，支持长按划词复制消息与链接。
 - **决策审批**：针对 Agent 请求确认的操作，提供一键批准（Approve）与拒绝（Reject）原生交互。
 - **状态通知**：后台任务提醒与震动通知。
 
-### 3. 🔐 统一永久签名密钥 (Unified Permanent Keystore)
+### 8. 🔐 统一永久签名密钥 (Unified Permanent Keystore)
 - 内置固化项目签名证书 `app/release.jks`（有效期至 2054 年）。
 - **支持直接覆盖安装升级**，绝不再报签名冲突错误。
 
