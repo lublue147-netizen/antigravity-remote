@@ -14,11 +14,8 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
+import androidx.compose.animation.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -315,11 +312,11 @@ fun WebRemoteScreen(
                     try {
                         CookieManager.getInstance().flush()
                     } catch (_: Exception) {}
-                    // DO NOT call pauseTimers() or onPause() here!
-                    // Calling pauseTimers() freezes Chromium JS timers and kills WebSocket heartbeats,
-                    // causing remote IDE and agent sessions to disconnect when backgrounded or locked.
                 }
                 Lifecycle.Event.ON_STOP -> {
+                    // Battery saving: Put GPU rendering & CSS animations to sleep when app is fully stopped/screen off,
+                    // without calling pauseTimers() so background WebSocket heartbeats and data transfer remain alive!
+                    webViewInstance?.onPause()
                     webViewInstance?.url?.let { currentUrl ->
                         if (AccountUrlHelper.isPersistableAppUrl(currentUrl)) {
                             viewModel.recordActiveUrl(currentUrl)
@@ -328,6 +325,11 @@ fun WebRemoteScreen(
                     try {
                         CookieManager.getInstance().flush()
                     } catch (_: Exception) {}
+                }
+                Lifecycle.Event.ON_START -> {
+                    // Wake up rendering compositor when returning to foreground
+                    webViewInstance?.onResume()
+                    webViewInstance?.postInvalidate()
                 }
                 Lifecycle.Event.ON_RESUME -> {
                     webViewInstance?.onResume()
@@ -436,7 +438,8 @@ fun WebRemoteScreen(
                         )
 
                         setBackgroundColor(0xFF121212.toInt())
-                        setLayerType(View.LAYER_TYPE_HARDWARE, null)
+                        // Eliminate double GPU buffering to reduce battery drain & thermal heating
+                        setLayerType(View.LAYER_TYPE_NONE, null)
                         isVerticalScrollBarEnabled = false
                         isHorizontalScrollBarEnabled = false
                         resumeTimers()
@@ -464,6 +467,8 @@ fun WebRemoteScreen(
                             setSupportMultipleWindows(true)
                             javaScriptCanOpenWindowsAutomatically = true
                             mediaPlaybackRequiresUserGesture = true
+                            // Power & RAM optimizations: disable offscreen pre-rasterization
+                            offscreenPreRaster = false
 
                             // Chrome mobile UA without '; wv' for Google sign-in compatibility
                             val defaultUa = userAgentString
@@ -1042,17 +1047,18 @@ fun WebRemoteScreen(
                                             }, 200);
                                         }, { passive: true });
 
+                                        var selChangeTimer = null;
                                         document.addEventListener('selectionchange', function() {
-                                            if (selBubble) {
-                                                var sel = window.getSelection ? window.getSelection() : null;
-                                                if (!sel || sel.isCollapsed) {
-                                                    setTimeout(function() {
-                                                        var s = window.getSelection ? window.getSelection() : null;
-                                                        if (!s || s.isCollapsed) {
-                                                            removeSelBubble();
-                                                        }
-                                                    }, 300);
-                                                }
+                                            if (!selBubble) return;
+                                            var sel = window.getSelection ? window.getSelection() : null;
+                                            if (!sel || sel.isCollapsed) {
+                                                if (selChangeTimer) clearTimeout(selChangeTimer);
+                                                selChangeTimer = setTimeout(function() {
+                                                    var s = window.getSelection ? window.getSelection() : null;
+                                                    if (!s || s.isCollapsed) {
+                                                        removeSelBubble();
+                                                    }
+                                                }, 200);
                                             }
                                         });
 
@@ -1333,76 +1339,86 @@ fun WebRemoteScreen(
             )
         }
 
-        // Connection error & dead session recovery overlay
-        if (hasPageError) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color(0xFF121212).copy(alpha = 0.95f))
-                    .padding(24.dp),
-                contentAlignment = Alignment.Center
+        // Non-intrusive floating connection status & recovery banner (does NOT block the screen)
+        AnimatedVisibility(
+            visible = hasPageError,
+            enter = slideInVertically { -it } + fadeIn(),
+            exit = slideOutVertically { -it } + fadeOut(),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+                .fillMaxWidth()
+        ) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.95f),
+                tonalElevation = 6.dp,
+                shadowElevation = 8.dp,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Card(
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
-                    ),
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .shadow(12.dp, RoundedCornerShape(20.dp))
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(
-                        modifier = Modifier.padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.WifiOff,
-                            contentDescription = null,
-                            modifier = Modifier.size(52.dp),
-                            tint = MaterialTheme.colorScheme.error
-                        )
-                        Spacer(Modifier.height(16.dp))
+                    Icon(
+                        imageVector = Icons.Filled.WifiOff,
+                        contentDescription = null,
+                        modifier = Modifier.size(22.dp),
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "连接暂时中断",
-                            style = MaterialTheme.typography.titleLarge,
+                            text = "网络连接中断",
+                            style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Spacer(Modifier.height(8.dp))
                         Text(
-                            text = if (pageErrorDescription.isNotBlank()) pageErrorDescription else "网络异常或远程会话已失效",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
-                            textAlign = TextAlign.Center
+                            text = if (pageErrorDescription.isNotBlank()) pageErrorDescription else "会话连接异常或已超时",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
-                        Spacer(Modifier.height(20.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            OutlinedButton(
-                                onClick = {
-                                    hasPageError = false
-                                    viewModel.resetToHomeUrl()
-                                },
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Icon(Icons.Filled.Home, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text("返回主页")
-                            }
-                            Button(
-                                onClick = {
-                                    hasPageError = false
-                                    webViewInstance?.reload()
-                                },
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text("重试连接")
-                            }
-                        }
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    FilledTonalButton(
+                        onClick = {
+                            hasPageError = false
+                            webViewInstance?.reload()
+                        },
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        modifier = Modifier.height(34.dp)
+                    ) {
+                        Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(15.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("重试", style = MaterialTheme.typography.labelMedium)
+                    }
+                    Spacer(Modifier.width(6.dp))
+                    OutlinedButton(
+                        onClick = {
+                            hasPageError = false
+                            viewModel.resetToHomeUrl()
+                        },
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        modifier = Modifier.height(34.dp)
+                    ) {
+                        Text("主页", style = MaterialTheme.typography.labelMedium)
+                    }
+                    IconButton(
+                        onClick = { hasPageError = false },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            Icons.Filled.Close,
+                            contentDescription = "关闭提示",
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                        )
                     }
                 }
             }

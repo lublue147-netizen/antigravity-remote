@@ -2,7 +2,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Platform-Android-3DDC84?style=for-the-badge&logo=android&logoColor=white" />
-  <img src="https://img.shields.io/badge/Version-v1.0.17-blue?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Version-v1.0.18-blue?style=for-the-badge" />
   <img src="https://img.shields.io/badge/Language-Kotlin-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white" />
   <img src="https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4?style=for-the-badge&logo=jetpackcompose&logoColor=white" />
   <img src="https://img.shields.io/badge/Min%20SDK-26-brightgreen?style=for-the-badge" />
@@ -10,8 +10,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/lublue147-netizen/antigravity-remote/releases/download/v1.0.17/app-release.apk">
-    <img src="https://img.shields.io/badge/📥%20下载-最新%20v1.0.17%20Release%20APK-1A73E8?style=for-the-badge&logo=android&logoColor=white" />
+  <a href="https://github.com/lublue147-netizen/antigravity-remote/releases/download/v1.0.18/app-release.apk">
+    <img src="https://img.shields.io/badge/📥%20下载-最新%20v1.0.18%20Release%20APK-1A73E8?style=for-the-badge&logo=android&logoColor=white" />
   </a>
 </p>
 
@@ -23,7 +23,15 @@ A native and containerized Android client for remotely controlling **Google Anti
 
 ## 🌟 核心特性 (Features)
 
-### 1. 🛡️ 连接保活与断联页面无法展示终极修复 (Keepalive & Error Recovery) (v1.0.17 重磅)
+### 1. ⚡ 全面续航功耗优化与非侵入式网络恢复浮窗 (Power Efficiency & Non-Blocking Recovery) (v1.0.18 重磅)
+- **非侵入式断联悬浮胶囊栏（绝不遮挡主页面）**：彻底推翻断联全屏遮罩方案，重构为顶部非侵入式悬浮状态胶囊（Animated Floating Banner）。网络断开或会话超时时，悬浮在屏幕顶部指示状态并提供「重试」与「主页」按钮，支持一键点击 `✕` 随时收起，**100% 完整保留底层会话代码、终端日志与对话历史的可视性与触控**。
+- **全生命周期深度省电休眠机制**：在 `ON_STOP` 生命周期（切后台、桌面锁定、完全隐藏）自动触发 `webView.onPause()` 暂停 GPU 合成、视频播放与 CSS 渲染循环，回到前台 `ON_START` / `ON_RESUME` 自动无缝唤醒；**全程不执行 `pauseTimers()`**，保持 WebSocket 心跳持续保活，在实现近乎零后台耗电的同时兼顾长连接永不断联。
+- **去除 GPU 离屏双重缓冲消耗**：移除 WebView 显式 `LAYER_TYPE_HARDWARE` 离屏纹理分配，切回原生硬件加速（`LAYER_TYPE_NONE`），消除每帧整屏 GPU 离屏纹理拷贝（Blit），实测大幅降低长时间远程编码发热与电池消耗。
+- **Android 11+ (API 30+) 60Hz 锁频增强**：新增 `preferredDisplayModeId` 精确锁定系统 60Hz 物理刷新率，彻底消除 120Hz/144Hz 高刷屏上因光标微闪动导致的 GPU 与屏幕持续高刷空转耗电。
+- **JS selectionchange 防抖与节流治理**：优化划词选区监听器，仅在悬浮胶囊激活时监听，并增加 200ms 防抖节流，彻底杜绝 AI 大段代码流式生成时无谓的密集定时器触发。
+- **原生 WebSocket 指数退避重连**：为自建 WebSocket 控制面板引入 3s~30s 指数退避重试，避免网络离线时频繁唤醒无线电基带。
+
+### 2. 🛡️ 连接保活与断联页面无法展示终极修复 (Keepalive & Error Recovery) (v1.0.17)
 - **根除 `pauseTimers()` 导致的心跳断联**：彻底移除 `ON_PAUSE` 与 `onDispose` 生命周期中对全局 Chromium `pauseTimers()` 的调用。解决熄屏、切后台查资料、下拉通知栏或切换底栏标签页时 JS 定时器被冻结、WebSocket 心跳包停发被服务端强制掐断连接的顽疾。
 - **解耦基础主页与临时会话持久化**：修复 `recordActiveUrl` 误将临时会话 `/r/...` 覆盖基础入口 `webRemoteUrl` 的缺陷。当远程会话失效或关闭时，保留有效的基础账号主页配置，彻底杜绝死循环加载失效会话导致的 404 / 白屏。
 - **WebViewClient 异常捕获与容错恢复卡片**：全面接入 `onReceivedError`、`onReceivedHttpError` 与 `onRenderProcessGone`。遇到网络波动或会话中断时，优雅弹出材质卡片，提供「重试连接」与「返回主页（自动重置失效会话）」一键恢复功能，彻底告别底层网络错误与白屏。

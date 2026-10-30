@@ -32,6 +32,8 @@ class WebSocketService @Inject constructor() {
 
     val messageChannel = Channel<String>(Channel.BUFFERED)
 
+    private var reconnectAttempt = 0
+
     fun connect(url: String, token: String = "") {
         reconnectJob?.cancel()
         isUserDisconnected = false
@@ -46,6 +48,7 @@ class WebSocketService @Inject constructor() {
 
         webSocket = client.newWebSocket(requestBuilder.build(), object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
+                reconnectAttempt = 0
                 _connectionState.value = ConnectionState.Connected
             }
 
@@ -74,7 +77,9 @@ class WebSocketService @Inject constructor() {
         if (isUserDisconnected || lastUrl.isBlank()) return
         reconnectJob?.cancel()
         reconnectJob = scope.launch {
-            delay(3000)
+            val backoffMs = (3000L * (1L shl reconnectAttempt.coerceAtMost(3))).coerceAtMost(30000L)
+            reconnectAttempt++
+            delay(backoffMs)
             if (!isUserDisconnected && lastUrl.isNotBlank()) {
                 connect(lastUrl, lastToken)
             }

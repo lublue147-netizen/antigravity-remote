@@ -23,6 +23,13 @@ class MainActivity : ComponentActivity() {
         try {
             val params = window.attributes
             params.preferredRefreshRate = 60f
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                val modes = display?.supportedModes
+                val mode60 = modes?.firstOrNull { kotlin.math.abs(it.refreshRate - 60f) < 1f }
+                if (mode60 != null) {
+                    params.preferredDisplayModeId = mode60.modeId
+                }
+            }
             window.attributes = params
         } catch (_: Exception) {}
 
