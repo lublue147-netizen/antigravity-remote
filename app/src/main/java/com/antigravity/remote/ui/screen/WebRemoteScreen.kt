@@ -263,6 +263,9 @@ fun WebRemoteScreen(
     var canGoBack by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
     var progress by remember { mutableFloatStateOf(0f) }
+    var hasPageError by remember { mutableStateOf(false) }
+    var pageErrorCode by remember { mutableIntStateOf(0) }
+    var pageErrorDescription by remember { mutableStateOf("") }
     var showUrlDialog by remember { mutableStateOf(false) }
     var showAccountDialog by remember { mutableStateOf(false) }
     var showFabMenu by remember { mutableStateOf(false) }
@@ -290,6 +293,7 @@ fun WebRemoteScreen(
     // Listen for intentional navigation events requested by Settings or Dialogs
     LaunchedEffect(Unit) {
         viewModel.pendingLoadUrl.collect { targetUrl ->
+            hasPageError = false
             webViewInstance?.loadUrl(targetUrl)
             try {
                 CookieManager.getInstance().flush()
@@ -297,7 +301,7 @@ fun WebRemoteScreen(
         }
     }
 
-    // Observe Activity / Screen lifecycle to pause timers & rendering when in background or navigating away
+    // Observe Activity / Screen lifecycle to flush cookies & record active session without freezing timers
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -311,8 +315,9 @@ fun WebRemoteScreen(
                     try {
                         CookieManager.getInstance().flush()
                     } catch (_: Exception) {}
-                    webViewInstance?.onPause()
-                    webViewInstance?.pauseTimers()
+                    // DO NOT call pauseTimers() or onPause() here!
+                    // Calling pauseTimers() freezes Chromium JS timers and kills WebSocket heartbeats,
+                    // causing remote IDE and agent sessions to disconnect when backgrounded or locked.
                 }
                 Lifecycle.Event.ON_STOP -> {
                     webViewInstance?.url?.let { currentUrl ->
@@ -327,6 +332,8 @@ fun WebRemoteScreen(
                 Lifecycle.Event.ON_RESUME -> {
                     webViewInstance?.onResume()
                     webViewInstance?.resumeTimers()
+                    webViewInstance?.postInvalidate()
+                    webViewInstance?.requestLayout()
                 }
                 else -> {}
             }
@@ -335,6 +342,7 @@ fun WebRemoteScreen(
         if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
             webViewInstance?.onResume()
             webViewInstance?.resumeTimers()
+            webViewInstance?.postInvalidate()
         }
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
@@ -346,9 +354,7 @@ fun WebRemoteScreen(
             try {
                 CookieManager.getInstance().flush()
             } catch (_: Exception) {}
-            // Pause WebView background tasks and JS timers when navigating away
-            webViewInstance?.onPause()
-            webViewInstance?.pauseTimers()
+            // DO NOT call pauseTimers() when navigating away between Compose tabs.
         }
     }
 
@@ -430,7 +436,7 @@ fun WebRemoteScreen(
                         )
 
                         setBackgroundColor(0xFF121212.toInt())
-                        setLayerType(View.LAYER_TYPE_NONE, null)
+                        setLayerType(View.LAYER_TYPE_HARDWARE, null)
                         isVerticalScrollBarEnabled = false
                         isHorizontalScrollBarEnabled = false
                         resumeTimers()
@@ -518,6 +524,7 @@ fun WebRemoteScreen(
                                 super.onPageStarted(view, url, favicon)
                                 isLoading = true
                                 canGoBack = view?.canGoBack() ?: false
+                                hasPageError = false
 
                                 if (url != null && AccountUrlHelper.isPersistableAppUrl(url)) {
                                     viewModel.recordActiveUrl(url)
@@ -525,6 +532,50 @@ fun WebRemoteScreen(
 
                                 // Early injection of Clipboard API polyfill (bridges navigator.clipboard to native Android clipboard)
                                 view?.evaluateJavascript(buildClipboardBridgeScript(), null)
+                            }
+
+                            override fun onReceivedError(
+                                view: WebView?,
+                                request: WebResourceRequest?,
+                                error: WebResourceError?
+                            ) {
+                                super.onReceivedError(view, request, error)
+                                if (request?.isForMainFrame == true) {
+                                    isLoading = false
+                                    hasPageError = true
+                                    pageErrorCode = error?.errorCode ?: 0
+                                    pageErrorDescription = error?.description?.toString() ?: "网络连接已中断"
+                                }
+                            }
+
+                            override fun onReceivedHttpError(
+                                view: WebView?,
+                                request: WebResourceRequest?,
+                                errorResponse: WebResourceResponse?
+                            ) {
+                                super.onReceivedHttpError(view, request, errorResponse)
+                                if (request?.isForMainFrame == true) {
+                                    val status = errorResponse?.statusCode ?: 0
+                                    if (status in listOf(404, 410, 500, 502, 503, 504)) {
+                                        hasPageError = true
+                                        pageErrorCode = status
+                                        pageErrorDescription = if (status == 404 || status == 410) {
+                                            "会话已过期或已被远端关闭 (HTTP $status)"
+                                        } else {
+                                            "远端服务异常 (HTTP $status)"
+                                        }
+                                    }
+                                }
+                            }
+
+                            override fun onRenderProcessGone(
+                                view: WebView?,
+                                detail: RenderProcessGoneDetail?
+                            ): Boolean {
+                                hasPageError = true
+                                pageErrorCode = -1
+                                pageErrorDescription = if (detail?.didCrash() == true) "WebView 渲染进程崩溃" else "系统内存不足，渲染进程已被回收"
+                                return true
                             }
 
                             override fun onPageFinished(view: WebView?, url: String?) {
@@ -660,7 +711,7 @@ fun WebRemoteScreen(
                                                         overflow-x: hidden !important;
                                                     }
                                                     /* Expand top-level root containers without breaking internal flex layouts */
-                                                    #root, #app, main, body > div:first-child {
+                                                    #root, #app, main {
                                                         width: 100% !important;
                                                         min-height: 100% !important;
                                                     }
@@ -1280,6 +1331,81 @@ fun WebRemoteScreen(
                 color = MaterialTheme.colorScheme.primary,
                 trackColor = Color.Transparent
             )
+        }
+
+        // Connection error & dead session recovery overlay
+        if (hasPageError) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xFF121212).copy(alpha = 0.95f))
+                    .padding(24.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Card(
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .shadow(12.dp, RoundedCornerShape(20.dp))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.WifiOff,
+                            contentDescription = null,
+                            modifier = Modifier.size(52.dp),
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                        Spacer(Modifier.height(16.dp))
+                        Text(
+                            text = "连接暂时中断",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = if (pageErrorDescription.isNotBlank()) pageErrorDescription else "网络异常或远程会话已失效",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(Modifier.height(20.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    hasPageError = false
+                                    viewModel.resetToHomeUrl()
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Filled.Home, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("返回主页")
+                            }
+                            Button(
+                                onClick = {
+                                    hasPageError = false
+                                    webViewInstance?.reload()
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("重试连接")
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // Floating Action Menu Overlay (when expanded)

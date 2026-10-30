@@ -27,11 +27,29 @@ object AccountUrlHelper {
         }
 
         val path = uri.path?.lowercase() ?: ""
-        if (path.contains("/signin") || path.contains("/servicelogin") || path.contains("/oauth")) {
+        if (path.contains("/signin") || path.contains("/servicelogin") || path.contains("/oauth") ||
+            path.contains("/error") || path.contains("/notfound")) {
             return false
         }
 
         return true
+    }
+
+    /**
+     * Checks whether the URL is a dynamic, ephemeral session URL (/r/... or /session/...)
+     */
+    fun isSessionUrl(url: String?): Boolean {
+        if (url.isNullOrBlank()) return false
+        return url.contains("/r/") || url.contains("/session/")
+    }
+
+    /**
+     * Extracts the base account root URL from an active session or deep URL.
+     * e.g., https://antigravity.google.com/u/1/r/xyz -> https://antigravity.google.com/u/1/
+     */
+    fun getBaseAccountUrl(url: String?): String {
+        val accountIndex = extractAccountIndex(url) ?: 0
+        return buildAccountUrl("https://antigravity.google.com", accountIndex)
     }
 
     /**

@@ -147,12 +147,28 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch {
             val detectedIndex = AccountUrlHelper.extractAccountIndex(cleanUrl)
             val indexToUpdate = if (detectedIndex != null && detectedIndex != lastAccountIndex.value) detectedIndex else null
+            // Never overwrite webRemoteUrl with an ephemeral session URL (/r/...), which would cause permanent 404/blank screen if the session expires
+            val isSession = AccountUrlHelper.isSessionUrl(cleanUrl)
+            val shouldSyncBaseUrl = !isSession && cleanUrl.isNotBlank()
             settingsDataStore.updateActiveSession(
                 activeUrl = cleanUrl,
                 accountIndex = indexToUpdate,
-                syncWebRemoteUrl = true
+                syncWebRemoteUrl = shouldSyncBaseUrl
             )
         }
+    }
+
+    fun resetToHomeUrl() {
+        val base = webRemoteUrl.value.ifBlank { "https://antigravity.google.com" }
+        val target = if (lastAccountIndex.value > 0) {
+            AccountUrlHelper.buildAccountUrl(base, lastAccountIndex.value)
+        } else {
+            base
+        }
+        viewModelScope.launch {
+            settingsDataStore.setLastActiveUrl(target)
+        }
+        requestLoadUrl(target)
     }
 
     fun updateServerUrl(url: String) {

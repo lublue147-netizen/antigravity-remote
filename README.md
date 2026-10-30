@@ -2,7 +2,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Platform-Android-3DDC84?style=for-the-badge&logo=android&logoColor=white" />
-  <img src="https://img.shields.io/badge/Version-v1.0.16-blue?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Version-v1.0.17-blue?style=for-the-badge" />
   <img src="https://img.shields.io/badge/Language-Kotlin-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white" />
   <img src="https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4?style=for-the-badge&logo=jetpackcompose&logoColor=white" />
   <img src="https://img.shields.io/badge/Min%20SDK-26-brightgreen?style=for-the-badge" />
@@ -10,8 +10,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/lublue147-netizen/antigravity-remote/releases/download/v1.0.16/app-release.apk">
-    <img src="https://img.shields.io/badge/📥%20下载-最新%20v1.0.16%20Release%20APK-1A73E8?style=for-the-badge&logo=android&logoColor=white" />
+  <a href="https://github.com/lublue147-netizen/antigravity-remote/releases/download/v1.0.17/app-release.apk">
+    <img src="https://img.shields.io/badge/📥%20下载-最新%20v1.0.17%20Release%20APK-1A73E8?style=for-the-badge&logo=android&logoColor=white" />
   </a>
 </p>
 
@@ -23,7 +23,15 @@ A native and containerized Android client for remotely controlling **Google Anti
 
 ## 🌟 核心特性 (Features)
 
-### 1. 🔄 退出冷启动会话完整恢复与持久化修复 (Session Resume & State Flow Optimization) (v1.0.16 重磅)
+### 1. 🛡️ 连接保活与断联页面无法展示终极修复 (Keepalive & Error Recovery) (v1.0.17 重磅)
+- **根除 `pauseTimers()` 导致的心跳断联**：彻底移除 `ON_PAUSE` 与 `onDispose` 生命周期中对全局 Chromium `pauseTimers()` 的调用。解决熄屏、切后台查资料、下拉通知栏或切换底栏标签页时 JS 定时器被冻结、WebSocket 心跳包停发被服务端强制掐断连接的顽疾。
+- **解耦基础主页与临时会话持久化**：修复 `recordActiveUrl` 误将临时会话 `/r/...` 覆盖基础入口 `webRemoteUrl` 的缺陷。当远程会话失效或关闭时，保留有效的基础账号主页配置，彻底杜绝死循环加载失效会话导致的 404 / 白屏。
+- **WebViewClient 异常捕获与容错恢复卡片**：全面接入 `onReceivedError`、`onReceivedHttpError` 与 `onRenderProcessGone`。遇到网络波动或会话中断时，优雅弹出材质卡片，提供「重试连接」与「返回主页（自动重置失效会话）」一键恢复功能，彻底告别底层网络错误与白屏。
+- **Compose 唤醒硬件加速与强制重绘**：启用硬件加速图层（`LAYER_TYPE_HARDWARE`），并在 `onResume` 时主动触发 `postInvalidate()` 与 `requestLayout()`，消除 Compose AndroidView 恢复时的黑屏/无渲染问题。
+- **CSS 注入隔离优化**：移除对 `body > div:first-child` 的全局宽高强拉伸规则，避免干扰前端页面中的模态框、提示弹层（Toast）及 Portal 容器。
+- **原生 WebSocket 自动断线重连**：为自建 WebSocket 控制面板（Dashboard）新增自动断线重连机制，网络瞬断后 3 秒内平滑重连。
+
+### 2. 🔄 退出冷启动会话完整恢复与持久化修复 (Session Resume & State Flow Optimization) (v1.0.16)
 - **恢复 StateFlow 预加载 (Eager StateFlow Initialization)**：将 `lastActiveUrl`、`webRemoteUrl`、`lastAccountIndex`、`autoRestoreAccount` 调整为 `SharingStarted.Eagerly`，彻底消除 `WhileSubscribed` 在缺乏订阅者时因不启动 Flow 导致的内存冷启动 URL 永久落空问题。
 - **Compose 状态全链路收集**：在 `WebRemoteScreen` 中补齐 `lastActiveUrl` 的 `collectAsState()`，并在计算启动 `initialUrl` 时优先使用当前会话 URL（`/r/...`），杜绝因读取空状态导致回退到根主页。
 - **双重持久化同步与原子事务更新**：在 `recordActiveUrl` 中恢复 `webRemoteUrl` 与 `lastActiveUrl` 的实时同步，利用 DataStore 单次事务批量更新，兼顾 I/O 性能与状态一致性。
