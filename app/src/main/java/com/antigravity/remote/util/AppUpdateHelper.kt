@@ -60,38 +60,40 @@ object AppUpdateHelper {
     }
 
     /**
-     * Fetches all available releases from GitHub API.
+     * Fetches available releases from GitHub API.
      */
-    suspend fun fetchAvailableReleases(): Result<List<AppReleaseInfo>> = withContext(Dispatchers.IO) {
+    suspend fun fetchAvailableReleases(perPage: Int? = null): Result<List<AppReleaseInfo>> = withContext(Dispatchers.IO) {
         try {
+            val url = if (perPage != null) "$RELEASES_API_URL?per_page=$perPage" else RELEASES_API_URL
             val request = Request.Builder()
-                .url(RELEASES_API_URL)
+                .url(url)
                 .header("Accept", "application/vnd.github.v3+json")
                 .header("User-Agent", "AntigravityRemoteAndroid/$currentVersionName")
                 .build()
 
-            val response = httpClient.newCall(request).execute()
-            if (!response.isSuccessful) {
-                return@withContext Result.failure(Exception("GitHub API 响应失败: HTTP ${response.code}"))
+            httpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    return@withContext Result.failure(Exception("GitHub API 响应失败: HTTP ${response.code}"))
+                }
+
+                val bodyString = response.body?.string() ?: ""
+                if (bodyString.isBlank()) {
+                    return@withContext Result.failure(Exception("未获取到版本数据"))
+                }
+
+                val array = JSONArray(bodyString)
+                val list = mutableListOf<AppReleaseInfo>()
+
+                for (i in 0 until array.length()) {
+                    val obj = array.getJSONObject(i)
+                    if (obj.optBoolean("draft", false)) continue
+
+                    val info = parseReleaseObject(obj)
+                    list.add(info)
+                }
+
+                Result.success(list)
             }
-
-            val bodyString = response.body?.string() ?: ""
-            if (bodyString.isBlank()) {
-                return@withContext Result.failure(Exception("未获取到版本数据"))
-            }
-
-            val array = JSONArray(bodyString)
-            val list = mutableListOf<AppReleaseInfo>()
-
-            for (i in 0 until array.length()) {
-                val obj = array.getJSONObject(i)
-                if (obj.optBoolean("draft", false)) continue
-
-                val info = parseReleaseObject(obj)
-                list.add(info)
-            }
-
-            Result.success(list)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to fetch releases", e)
             Result.failure(e)
@@ -102,7 +104,7 @@ object AppUpdateHelper {
      * Checks for the latest release and evaluates whether a newer version exists.
      */
     suspend fun checkLatestRelease(): Result<AppReleaseInfo?> = withContext(Dispatchers.IO) {
-        val releasesResult = fetchAvailableReleases()
+        val releasesResult = fetchAvailableReleases(perPage = 1)
         if (releasesResult.isFailure) {
             return@withContext Result.failure(releasesResult.exceptionOrNull() ?: Exception("检查更新失败"))
         }

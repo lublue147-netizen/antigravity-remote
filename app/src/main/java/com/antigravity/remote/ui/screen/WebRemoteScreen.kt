@@ -20,6 +20,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -64,8 +65,7 @@ data class TableLinksGroup(
     val links: List<TableLinkItem>
 )
 
-private fun buildClipboardBridgeScript(): String {
-    return """
+private val CLIPBOARD_BRIDGE_SCRIPT: String = """
         (function() {
             function setupClipboardBridge() {
                 if (!window.AndroidLinkHelper) return;
@@ -236,13 +236,13 @@ private fun buildClipboardBridgeScript(): String {
             }
         })();
     """.trimIndent()
-}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun WebRemoteScreen(
     viewModel: MainViewModel,
+    isActiveTab: Boolean = true,
     onNavigateToTab: (String) -> Unit = {}
 ) {
     val isSettingsLoaded by viewModel.isSettingsLoaded.collectAsState()
@@ -298,6 +298,20 @@ fun WebRemoteScreen(
         }
     }
 
+    // Pause WebView rendering when switched to another tab (Settings/Dashboard/Chat) to save battery & GPU,
+    // without destroying or reloading the WebView.
+    LaunchedEffect(isActiveTab, webViewInstance) {
+        val wv = webViewInstance ?: return@LaunchedEffect
+        if (isActiveTab) {
+            wv.visibility = View.VISIBLE
+            wv.onResume()
+            wv.resumeTimers()
+        } else {
+            wv.onPause()
+            wv.visibility = View.INVISIBLE
+        }
+    }
+
     // Observe Activity / Screen lifecycle to flush cookies & record active session without freezing timers
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -317,34 +331,25 @@ fun WebRemoteScreen(
                     // Battery saving: Put GPU rendering & CSS animations to sleep when app is fully stopped/screen off,
                     // without calling pauseTimers() so background WebSocket heartbeats and data transfer remain alive!
                     webViewInstance?.onPause()
-                    webViewInstance?.url?.let { currentUrl ->
-                        if (AccountUrlHelper.isPersistableAppUrl(currentUrl)) {
-                            viewModel.recordActiveUrl(currentUrl)
-                        }
-                    }
-                    try {
-                        CookieManager.getInstance().flush()
-                    } catch (_: Exception) {}
                 }
                 Lifecycle.Event.ON_START -> {
-                    // Wake up rendering compositor when returning to foreground
-                    webViewInstance?.onResume()
-                    webViewInstance?.postInvalidate()
+                    if (isActiveTab) {
+                        webViewInstance?.onResume()
+                    }
                 }
                 Lifecycle.Event.ON_RESUME -> {
-                    webViewInstance?.onResume()
-                    webViewInstance?.resumeTimers()
-                    webViewInstance?.postInvalidate()
-                    webViewInstance?.requestLayout()
+                    if (isActiveTab) {
+                        webViewInstance?.onResume()
+                        webViewInstance?.resumeTimers()
+                    }
                 }
                 else -> {}
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
-        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+        if (isActiveTab && lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
             webViewInstance?.onResume()
             webViewInstance?.resumeTimers()
-            webViewInstance?.postInvalidate()
         }
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
@@ -356,12 +361,16 @@ fun WebRemoteScreen(
             try {
                 CookieManager.getInstance().flush()
             } catch (_: Exception) {}
-            // DO NOT call pauseTimers() when navigating away between Compose tabs.
+            webViewInstance?.apply {
+                stopLoading()
+                destroy()
+            }
+            webViewInstance = null
         }
     }
 
-    // Intercept hardware/gesture back to navigate inside webview history
-    BackHandler(enabled = canGoBack) {
+    // Intercept hardware/gesture back to navigate inside webview history only when this tab is active
+    BackHandler(enabled = isActiveTab && canGoBack) {
         webViewInstance?.goBack()
     }
 
@@ -536,7 +545,7 @@ fun WebRemoteScreen(
                                 }
 
                                 // Early injection of Clipboard API polyfill (bridges navigator.clipboard to native Android clipboard)
-                                view?.evaluateJavascript(buildClipboardBridgeScript(), null)
+                                view?.evaluateJavascript(CLIPBOARD_BRIDGE_SCRIPT, null)
                             }
 
                             override fun onReceivedError(
@@ -597,7 +606,7 @@ fun WebRemoteScreen(
                                 }
 
                                 // Re-apply clipboard bridge in case page reloaded or navigated via SPA
-                                view?.evaluateJavascript(buildClipboardBridgeScript(), null)
+                                view?.evaluateJavascript(CLIPBOARD_BRIDGE_SCRIPT, null)
 
                                 // 1. Inject download hook for intercepting <a> click, blob:, data: links
                                 val jsDownloadHook = """
@@ -974,12 +983,19 @@ fun WebRemoteScreen(
                                                     }
                                                 }
 
-                                                var hasClip = false;
-                                                try {
-                                                    hasClip = window.AndroidLinkHelper && window.AndroidLinkHelper.hasClipboardText && window.AndroidLinkHelper.hasClipboardText();
-                                                } catch (_) {}
+                                                if (!selectedText && !isInput) {
+                                                    removeSelBubble();
+                                                    return;
+                                                }
 
-                                                if (!selectedText && (!isInput || !hasClip)) {
+                                                var hasClip = false;
+                                                if (isInput) {
+                                                    try {
+                                                        hasClip = window.AndroidLinkHelper && window.AndroidLinkHelper.hasClipboardText && window.AndroidLinkHelper.hasClipboardText();
+                                                    } catch (_) {}
+                                                }
+
+                                                if (!selectedText && !hasClip) {
                                                     removeSelBubble();
                                                     return;
                                                 }
@@ -1230,8 +1246,10 @@ fun WebRemoteScreen(
                                                 } else {
                                                     view?.loadUrl(url)
                                                 }
-                                                v?.stopLoading()
-                                                v?.destroy()
+                                                v?.post {
+                                                    v.stopLoading()
+                                                    v.destroy()
+                                                }
                                             }
                                         }
 
@@ -1263,8 +1281,10 @@ fun WebRemoteScreen(
                                                     view?.loadUrl(targetUrl)
                                                 }
                                             }
-                                            v?.stopLoading()
-                                            v?.destroy()
+                                            v?.post {
+                                                v.stopLoading()
+                                                v.destroy()
+                                            }
                                             return true
                                         }
                                     }
@@ -2129,7 +2149,10 @@ fun WebRemoteScreen(
                             .fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        items(tableData.links) { item ->
+                        itemsIndexed(
+                            items = tableData.links,
+                            key = { index, item -> "${index}_${item.url}" }
+                        ) { _, item ->
                             Card(
                                 colors = CardDefaults.cardColors(
                                     containerColor = MaterialTheme.colorScheme.surfaceVariant

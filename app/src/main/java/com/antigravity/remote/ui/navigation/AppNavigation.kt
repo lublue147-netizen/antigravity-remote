@@ -1,5 +1,6 @@
 package com.antigravity.remote.ui.navigation
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
@@ -78,9 +79,8 @@ fun AppNavigation(viewModel: MainViewModel) {
             }
         }
     ) { innerPadding ->
-        NavHost(
-            navController = navController,
-            startDestination = Screen.WebRemote.route,
+        val isWebRemoteTab = currentRoute == null || currentRoute == Screen.WebRemote.route
+        Box(
             modifier = Modifier
                 .padding(
                     top = innerPadding.calculateTopPadding(),
@@ -88,39 +88,61 @@ fun AppNavigation(viewModel: MainViewModel) {
                 )
                 .imePadding()
         ) {
-            composable(Screen.WebRemote.route) {
-                com.antigravity.remote.ui.screen.WebRemoteScreen(
-                    viewModel = viewModel,
-                    onNavigateToTab = { route ->
-                        navController.navigate(route) {
-                            popUpTo(navController.graph.startDestinationId) {
-                                saveState = true
-                            }
-                            launchSingleTop = true
-                            restoreState = true
+            // Keep WebRemoteScreen mounted across tab switches so WebView is paused/resumed
+            // instead of destroyed and reloaded on every tab switch.
+            com.antigravity.remote.ui.screen.WebRemoteScreen(
+                viewModel = viewModel,
+                isActiveTab = isWebRemoteTab,
+                onNavigateToTab = { route ->
+                    navController.navigate(route) {
+                        popUpTo(navController.graph.startDestinationId) {
+                            saveState = true
                         }
+                        launchSingleTop = true
+                        restoreState = true
                     }
-                )
-            }
-            composable(Screen.Dashboard.route) {
-                DashboardScreen(
-                    viewModel = viewModel,
-                    onSessionClick = { sessionId ->
-                        viewModel.selectSession(sessionId)
-                        navController.navigate(Screen.Chat.route)
+                }
+            )
+
+            NavHost(
+                navController = navController,
+                startDestination = Screen.WebRemote.route
+            ) {
+                composable(Screen.WebRemote.route) {
+                    // Rendered by the persistent WebRemoteScreen above
+                }
+                composable(Screen.Dashboard.route) {
+                    Surface(color = MaterialTheme.colorScheme.background) {
+                        DashboardScreen(
+                            viewModel = viewModel,
+                            onSessionClick = { sessionId ->
+                                viewModel.selectSession(sessionId)
+                                navController.navigate(Screen.Chat.route)
+                            }
+                        )
                     }
-                )
-            }
-            composable(Screen.Chat.route) {
-                ChatScreen(viewModel = viewModel)
-            }
-            composable(Screen.Settings.route) {
-                SettingsScreen(
-                    viewModel = viewModel,
-                    onNavigateToWeb = {
-                        navController.navigate(Screen.WebRemote.route)
+                }
+                composable(Screen.Chat.route) {
+                    Surface(color = MaterialTheme.colorScheme.background) {
+                        ChatScreen(viewModel = viewModel)
                     }
-                )
+                }
+                composable(Screen.Settings.route) {
+                    Surface(color = MaterialTheme.colorScheme.background) {
+                        SettingsScreen(
+                            viewModel = viewModel,
+                            onNavigateToWeb = {
+                                navController.navigate(Screen.WebRemote.route) {
+                                    popUpTo(navController.graph.startDestinationId) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            }
+                        )
+                    }
+                }
             }
         }
     }

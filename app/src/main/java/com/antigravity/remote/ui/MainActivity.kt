@@ -42,13 +42,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onPause() {
-        super.onPause()
-        try {
-            CookieManager.getInstance().flush()
-        } catch (_: Exception) {}
-    }
-
     override fun onStop() {
         super.onStop()
         try {

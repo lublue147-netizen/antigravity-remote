@@ -143,12 +143,12 @@ class MainViewModel @Inject constructor(
     fun recordActiveUrl(url: String) {
         if (!AccountUrlHelper.isPersistableAppUrl(url)) return
         val cleanUrl = url.trim()
-        if (cleanUrl == lastActiveUrl.value && cleanUrl == webRemoteUrl.value) return
+        val isSession = AccountUrlHelper.isSessionUrl(cleanUrl)
+        if (cleanUrl == lastActiveUrl.value && (isSession || cleanUrl == webRemoteUrl.value)) return
         viewModelScope.launch {
             val detectedIndex = AccountUrlHelper.extractAccountIndex(cleanUrl)
             val indexToUpdate = if (detectedIndex != null && detectedIndex != lastAccountIndex.value) detectedIndex else null
             // Never overwrite webRemoteUrl with an ephemeral session URL (/r/...), which would cause permanent 404/blank screen if the session expires
-            val isSession = AccountUrlHelper.isSessionUrl(cleanUrl)
             val shouldSyncBaseUrl = !isSession && cleanUrl.isNotBlank()
             settingsDataStore.updateActiveSession(
                 activeUrl = cleanUrl,

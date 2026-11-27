@@ -109,8 +109,8 @@ class AgentRepository @Inject constructor(
                 }
                 "session_update" -> {
                     val session = json.decodeFromString<AgentSession>(wsMsg.payload)
-                    _sessions.value = _sessions.value.map {
-                        if (it.id == session.id) session else it
+                    _sessions.update { list ->
+                        list.map { if (it.id == session.id) session else it }
                     }
                 }
                 "assistant_message", "system_message", "tool_message" -> {
@@ -128,35 +128,35 @@ class AgentRepository @Inject constructor(
                     addMessage(wsMsg.sessionId, chatMsg)
                 }
                 "stream_chunk" -> {
-                    val currentMessages = _messages.value[wsMsg.sessionId]?.toMutableList() ?: mutableListOf()
-                    val lastMsg = currentMessages.lastOrNull()
-                    if (lastMsg != null && lastMsg.role == MessageRole.ASSISTANT && lastMsg.isStreaming) {
-                        currentMessages[currentMessages.lastIndex] = lastMsg.copy(
-                            content = lastMsg.content + wsMsg.payload
-                        )
-                    } else {
-                        currentMessages.add(
-                            ChatMessage(
-                                id = UUID.randomUUID().toString(),
-                                sessionId = wsMsg.sessionId,
-                                role = MessageRole.ASSISTANT,
-                                content = wsMsg.payload,
-                                isStreaming = true
+                    _messages.update { currentMap ->
+                        val currentMessages = currentMap[wsMsg.sessionId]?.toMutableList() ?: mutableListOf()
+                        val lastMsg = currentMessages.lastOrNull()
+                        if (lastMsg != null && lastMsg.role == MessageRole.ASSISTANT && lastMsg.isStreaming) {
+                            currentMessages[currentMessages.lastIndex] = lastMsg.copy(
+                                content = lastMsg.content + wsMsg.payload
                             )
-                        )
-                    }
-                    _messages.value = _messages.value.toMutableMap().apply {
-                        put(wsMsg.sessionId, currentMessages)
+                        } else {
+                            currentMessages.add(
+                                ChatMessage(
+                                    id = UUID.randomUUID().toString(),
+                                    sessionId = wsMsg.sessionId,
+                                    role = MessageRole.ASSISTANT,
+                                    content = wsMsg.payload,
+                                    isStreaming = true
+                                )
+                            )
+                        }
+                        currentMap + (wsMsg.sessionId to currentMessages)
                     }
                 }
                 "stream_end" -> {
-                    val currentMessages = _messages.value[wsMsg.sessionId]?.toMutableList() ?: return
-                    val lastMsg = currentMessages.lastOrNull() ?: return
-                    if (lastMsg.isStreaming) {
-                        currentMessages[currentMessages.lastIndex] = lastMsg.copy(isStreaming = false)
-                        _messages.value = _messages.value.toMutableMap().apply {
-                            put(wsMsg.sessionId, currentMessages)
-                        }
+                    _messages.update { currentMap ->
+                        val existing = currentMap[wsMsg.sessionId] ?: return@update currentMap
+                        val lastMsg = existing.lastOrNull() ?: return@update currentMap
+                        if (!lastMsg.isStreaming) return@update currentMap
+                        val updated = existing.toMutableList()
+                        updated[updated.lastIndex] = lastMsg.copy(isStreaming = false)
+                        currentMap + (wsMsg.sessionId to updated)
                     }
                 }
             }
@@ -165,10 +165,9 @@ class AgentRepository @Inject constructor(
     }
 
     private fun addMessage(sessionId: String, message: ChatMessage) {
-        val currentMessages = _messages.value[sessionId]?.toMutableList() ?: mutableListOf()
-        currentMessages.add(message)
-        _messages.value = _messages.value.toMutableMap().apply {
-            put(sessionId, currentMessages)
+        _messages.update { currentMap ->
+            val currentMessages = (currentMap[sessionId] ?: emptyList()) + message
+            currentMap + (sessionId to currentMessages)
         }
     }
 

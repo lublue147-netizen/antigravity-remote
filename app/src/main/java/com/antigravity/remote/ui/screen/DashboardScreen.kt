@@ -95,7 +95,7 @@ fun DashboardScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(sessions) { session ->
+                items(sessions, key = { it.id }) { session ->
                     SessionCard(
                         session = session,
                         onClick = { onSessionClick(session.id) },

@@ -68,7 +68,7 @@ fun ChatScreen(viewModel: MainViewModel) {
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(sessionMessages) { msg ->
+                items(sessionMessages, key = { it.id }) { msg ->
                     val isUser = msg.role == MessageRole.USER
                     Row(
                         modifier = Modifier.fillMaxWidth(),
